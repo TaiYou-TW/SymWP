@@ -1,18 +1,21 @@
 <?php
 
-function extract_php_files($dir) {
+function extract_php_files($dir)
+{
     $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir));
     $files = [];
 
     foreach ($rii as $file) {
-        if ($file->isDir() || $file->getExtension() !== 'php') continue;
+        if ($file->isDir() || $file->getExtension() !== 'php')
+            continue;
         $files[] = $file->getPathname();
     }
 
     return $files;
 }
 
-function extract_functions_and_methods($content) {
+function extract_functions_and_methods($content)
+{
     $tokens = token_get_all($content);
     $functions = [];
     $classes = [];
@@ -20,10 +23,17 @@ function extract_functions_and_methods($content) {
 
     $inClass = false;
     $className = '';
+    $visibility = T_PUBLIC;
+
     for ($i = 0; $i < $count; $i++) {
         if ($tokens[$i][0] === T_CLASS && $tokens[$i + 2][0] === T_STRING) {
             $inClass = true;
             $className = $tokens[$i + 2][1];
+            continue;
+        }
+
+        if ($inClass && in_array($tokens[$i][0], [T_PUBLIC, T_PROTECTED, T_PRIVATE])) {
+            $visibility = $tokens[$i][0];
             continue;
         }
 
@@ -42,20 +52,21 @@ function extract_functions_and_methods($content) {
                 }
             }
 
-            // Get function params
+            // Get function parameters
             $paramIndex = $j + 1;
             if ($tokens[$paramIndex] === '(') {
                 $paramIndex++;
                 while ($tokens[$paramIndex] !== ')') {
                     if (is_array($tokens[$paramIndex]) && $tokens[$paramIndex][0] === T_VARIABLE) {
-                        $params[] = substr($tokens[$paramIndex][1], 1); // remove $
+                        $params[] = substr($tokens[$paramIndex][1], 1);
                     }
                     $paramIndex++;
-                    if ($paramIndex >= $count) break;
+                    if ($paramIndex >= $count)
+                        break;
                 }
             }
 
-            // Extract body
+            // Extract function body
             for (; $i < $count; $i++) {
                 if ($tokens[$i] === '{') {
                     $start = true;
@@ -66,23 +77,33 @@ function extract_functions_and_methods($content) {
 
                 if ($start) {
                     $body .= is_array($tokens[$i]) ? $tokens[$i][1] : $tokens[$i];
-                    if ($braceCount === 0) break;
+                    if ($braceCount === 0)
+                        break;
                 }
             }
 
             if ($name && $body) {
                 if ($inClass) {
-                    $classes[] = ['class' => $className, 'method' => $name, 'params' => $params, 'body' => $body];
+                    $classes[] = [
+                        'class' => $className,
+                        'method' => $name,
+                        'params' => $params,
+                        'body' => $body,
+                        'visibility' => $visibility
+                    ];
                 } else {
                     $functions[] = ['name' => $name, 'params' => $params, 'body' => $body];
                 }
             }
+
+            $visibility = T_PUBLIC; // reset for next method
             continue;
         }
 
         if ($tokens[$i] === '}') {
             $inClass = false;
             $className = '';
+            $visibility = T_PUBLIC;
             continue;
         }
     }
@@ -90,7 +111,8 @@ function extract_functions_and_methods($content) {
     return [$functions, $classes];
 }
 
-function extract_user_input_vars($body) {
+function extract_user_input_vars($body)
+{
     $inputs = [];
     $patterns = ['\$_GET', '\$_POST', '\$_REQUEST', '\$_COOKIE', '\$_FILES'];
 
@@ -106,30 +128,33 @@ function extract_user_input_vars($body) {
     return $inputs;
 }
 
-function common_harness_header() {
+function common_harness_header($filepath)
+{
+    global $plugin_entry_file;
+    assert($plugin_entry_file !== '', 'Plugin entry file not set');
     $output = <<<EOT
 <?php
-// This file is auto-generated. Do not edit.
-require './wordpress-loader.php';
-
+// This harness file is auto-generated. Do not edit.
+require 'wordpress-loader.php';
+require_once '$plugin_entry_file';
+require_once '$filepath';\n
 EOT;
     return $output;
 }
 
-function generate_function_harness($filepath, $function, $inputs, $outputDir) {
+function generate_function_harness($filepath, $function, $inputs, $outputDir)
+{
     $basename = basename($filepath, '.php');
     $funcname = $function['name'];
     $harnessName = "{$basename}_{$funcname}_func_harness.php";
     $outputPath = $outputDir . DIRECTORY_SEPARATOR . $harnessName;
 
-    $harness = common_harness_header();
+    $harness = common_harness_header($filepath);
 
     $argIndex = 1;
     foreach ($inputs as $super => $vars) {
         foreach ($vars as $var) {
-            echo $var."\n";
             $key = var_export($var, true);
-            echo $key."\n";
             $harness .= "{$super}[$key] = \$argv[{$argIndex}];\n";
             $argIndex++;
         }
@@ -148,12 +173,13 @@ function generate_function_harness($filepath, $function, $inputs, $outputDir) {
     echo "Generated function harness: $outputPath\n";
 }
 
-function generate_method_harness($filepath, $class, $method, $params, $inputs, $outputDir) {
+function generate_method_harness($filepath, $class, $method, $params, $inputs, $outputDir, $visibility = T_PUBLIC)
+{
     $basename = basename($filepath, '.php');
     $harnessName = "{$basename}_{$class}_{$method}_method_harness.php";
     $outputPath = $outputDir . DIRECTORY_SEPARATOR . $harnessName;
 
-    $harness = common_harness_header();
+    $harness = common_harness_header($filepath);
 
     $argIndex = 1;
     foreach ($inputs as $super => $vars) {
@@ -172,15 +198,21 @@ function generate_method_harness($filepath, $class, $method, $params, $inputs, $
 
     $args = implode(', ', $argsList);
     $harness .= "\$obj = new {$class}();\n";
-    $harness .= "\$obj->{$method}({$args});\n";
+
+    if ($visibility === T_PRIVATE || $visibility === T_PROTECTED) {
+        $harness .= "\$method = new ReflectionMethod(\"{$class}\", \"{$method}\");\n";
+        $harness .= "\$method->setAccessible(true);\n";
+        $harness .= "\$method->invoke(\$obj" . ($args ? ", $args" : "") . ");\n";
+    } else {
+        $harness .= "\$obj->{$method}($args);\n";
+    }
 
     file_put_contents($outputPath, $harness);
     echo "Generated method harness: $outputPath\n";
 }
 
-
 if ($argc < 2) {
-    echo "Usage: php $argv[0] <target_directory>\n";
+    echo "Usage: php {$argv[0]} <target_directory>\n";
     exit(1);
 }
 $targetDir = $argv[1] ?? '.';
@@ -194,9 +226,17 @@ if (!is_dir($outputDir)) {
 }
 
 $phpFiles = extract_php_files($targetDir);
+$plugin_entry_file = '';
 
 foreach ($phpFiles as $phpFile) {
     $code = file_get_contents($phpFile);
+    if ($plugin_entry_file === '' && preg_match('/Plugin Name:\s*(.+)/', $code, $matches)) {
+        $plugin_entry_file = $phpFile;
+    } else if ($plugin_entry_file === '') {
+        echo "No plugin entry file found. Please ensure the plugin header is present in one of the files.\n";
+        exit(1);
+    }
+
     [$functions, $methods] = extract_functions_and_methods($code);
 
     foreach ($functions as $function) {
@@ -209,7 +249,15 @@ foreach ($phpFiles as $phpFile) {
     foreach ($methods as $method) {
         $inputs = extract_user_input_vars($method['body']);
         if (!empty($inputs) || !empty($method['params'])) {
-            generate_method_harness($phpFile, $method['class'], $method['method'], $method['params'], $inputs, $outputDir);
+            generate_method_harness(
+                $phpFile,
+                $method['class'],
+                $method['method'],
+                $method['params'],
+                $inputs,
+                $outputDir,
+                $method['visibility'],
+            );
         }
     }
 }
