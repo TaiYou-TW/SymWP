@@ -1,0 +1,21 @@
+version: '3'
+services:
+  s2e-env:
+    build: .
+    container_name: s2e-env
+    volumes:
+      - ./workspace:~/s2e-env-builder/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    privileged: true
+    devices:
+      - /dev/kvm
+    cap_add:
+      - ALL
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
