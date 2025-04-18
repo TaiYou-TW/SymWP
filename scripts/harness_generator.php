@@ -127,7 +127,9 @@ function extract_user_input_vars(string $body): array
         if (preg_match_all("/{$pattern}\s*\[\s*['\"]([^'\"]+)['\"]\s*\]/", $body, $matches)) {
             foreach ($matches[1] as $match) {
                 $patternKey = str_replace('\\', '', $pattern); // remove \ from patterns
-                $inputs[$patternKey][] = $match;
+                if (!in_array($match, $inputs[$patternKey] ?? [])) {
+                    $inputs[$patternKey][] = $match;
+                }
             }
         }
     }
@@ -286,8 +288,8 @@ function generate_inline_harness(string $filepath, array $inputs, string $output
     $harnessName = "{$basename}_inline_harness.php";
     $outputPath = get_output_path($outputDir, $harnessName);
 
-    $harness = common_harness_header($filepath);
-    $argIndex = append_user_input_vars_to_harness($harness, $inputs);
+    $harness = common_harness_header();
+    append_user_input_vars_to_harness($harness, $inputs);
 
     $harness .= "require_once '$filepath';\n";
 
