@@ -159,9 +159,11 @@ function get_output_path(string $outputDir, string $filename): string
     return $outputDir . DIRECTORY_SEPARATOR . $filename;
 }
 
-function get_php_file_basename(string $filepath): string
+function get_dash_file_path(string $filepath): string
 {
-    return basename($filepath, '.php');
+    $result = str_replace('/', '-', $filepath);
+    $result = str_replace('.php', '-php', $result);
+    return $result;
 }
 
 function remove_all_php_files_from_folder(string $outputDir): void
@@ -199,7 +201,7 @@ function append_function_params_to_harness(string &$harness, array $function, in
 
 function generate_function_harness(string $filepath, array $function, array $inputs, string $outputDir): void
 {
-    $basename = get_php_file_basename($filepath);
+    $basename = get_dash_file_path($filepath);
     $funcname = $function['name'];
     $harnessName = "{$basename}_{$funcname}_func_harness.php";
     $outputPath = get_output_path($outputDir, $harnessName);
@@ -217,7 +219,7 @@ function generate_function_harness(string $filepath, array $function, array $inp
 
 function generate_method_harness(string $filepath, array $method, array $inputs, string $outputDir): void
 {
-    $basename = get_php_file_basename($filepath);
+    $basename = get_dash_file_path($filepath);
     $harnessName = "{$basename}_{$method['class']}_{$method['method']}_method_harness.php";
     $outputPath = get_output_path($outputDir, $harnessName);
 
@@ -284,7 +286,7 @@ function is_inline_php_file(string $code): bool
 
 function generate_inline_harness(string $filepath, array $inputs, string $outputDir): void
 {
-    $basename = get_php_file_basename($filepath);
+    $basename = get_dash_file_path($filepath);
     $harnessName = "{$basename}_inline_harness.php";
     $outputPath = get_output_path($outputDir, $harnessName);
 
