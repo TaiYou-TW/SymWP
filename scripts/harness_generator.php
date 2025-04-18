@@ -1,12 +1,14 @@
 <?php
 
-function extract_php_files($dir)
+const OUTPUT_FOLDER = '.harness';
+
+function extract_php_files(string $dir): array
 {
     $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir));
     $files = [];
 
     foreach ($rii as $file) {
-        if ($file->isDir() || $file->getExtension() !== 'php')
+        if ($file->isDir() || $file->getExtension() !== 'php' || str_starts_with($file->getPathname(), $dir . '/' . OUTPUT_FOLDER))
             continue;
         $files[] = $file->getPathname();
     }
@@ -14,7 +16,7 @@ function extract_php_files($dir)
     return $files;
 }
 
-function extract_functions_and_methods($content)
+function extract_functions_and_methods(string $content): array
 {
     $tokens = token_get_all($content);
     $functions = [];
@@ -37,37 +39,39 @@ function extract_functions_and_methods($content)
             continue;
         }
 
+        // function or method
         if ($tokens[$i][0] === T_FUNCTION) {
             $name = '';
             $params = [];
             $body = '';
             $braceCount = 0;
             $start = false;
+            $is_static = $tokens[$i - 2][0] === T_STATIC;
 
             // Get function name
-            for ($j = $i + 1; $j < $count; $j++) {
-                if ($tokens[$j][0] === T_STRING) {
-                    $name = $tokens[$j][1];
+            for ($i++; $i < $count; $i++) {
+                if ($tokens[$i][0] === T_STRING) {
+                    $name = $tokens[$i][1];
                     break;
                 }
             }
 
             // Get function parameters
-            $paramIndex = $j + 1;
-            if ($tokens[$paramIndex] === '(') {
-                $paramIndex++;
-                while ($tokens[$paramIndex] !== ')') {
-                    if (is_array($tokens[$paramIndex]) && $tokens[$paramIndex][0] === T_VARIABLE) {
-                        $params[] = substr($tokens[$paramIndex][1], 1);
-                    }
-                    $paramIndex++;
-                    if ($paramIndex >= $count)
-                        break;
+            for ($i++; $i < $count; $i++) {
+                if ($tokens[$i] === '(') {
+                    $start = true;
+                }
+                if ($tokens[$i] === ')') {
+                    $start = false;
+                    break;
+                }
+                if ($start && is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE) {
+                    $params[] = substr($tokens[$i][1], 1);
                 }
             }
 
             // Extract function body
-            for (; $i < $count; $i++) {
+            for ($i++; $i < $count; $i++) {
                 if ($tokens[$i] === '{') {
                     $start = true;
                     $braceCount++;
@@ -77,8 +81,10 @@ function extract_functions_and_methods($content)
 
                 if ($start) {
                     $body .= is_array($tokens[$i]) ? $tokens[$i][1] : $tokens[$i];
-                    if ($braceCount === 0)
+                    if ($braceCount === 0) {
+                        $start = false;
                         break;
+                    }
                 }
             }
 
@@ -89,7 +95,8 @@ function extract_functions_and_methods($content)
                         'method' => $name,
                         'params' => $params,
                         'body' => $body,
-                        'visibility' => $visibility
+                        'visibility' => $visibility,
+                        'is_static' => $is_static,
                     ];
                 } else {
                     $functions[] = ['name' => $name, 'params' => $params, 'body' => $body];
@@ -111,7 +118,7 @@ function extract_functions_and_methods($content)
     return [$functions, $classes];
 }
 
-function extract_user_input_vars($body)
+function extract_user_input_vars(string $body): array
 {
     $inputs = [];
     $patterns = ['\$_GET', '\$_POST', '\$_REQUEST', '\$_COOKIE', '\$_FILES'];
@@ -128,7 +135,7 @@ function extract_user_input_vars($body)
     return $inputs;
 }
 
-function common_harness_header($filepath)
+function common_harness_header(string $filepath): string
 {
     global $plugin_entry_file;
     assert($plugin_entry_file !== '', 'Plugin entry file not set');
@@ -142,7 +149,7 @@ EOT;
     return $output;
 }
 
-function generate_function_harness($filepath, $function, $inputs, $outputDir)
+function generate_function_harness(string $filepath, array $function, array $inputs, string $outputDir): void
 {
     $basename = basename($filepath, '.php');
     $funcname = $function['name'];
@@ -173,7 +180,7 @@ function generate_function_harness($filepath, $function, $inputs, $outputDir)
     echo "Generated function harness: $outputPath\n";
 }
 
-function generate_method_harness($filepath, $class, $method, $params, $inputs, $outputDir, $visibility = T_PUBLIC)
+function generate_method_harness(string $filepath, string $class, string $method, array $params, array $inputs, string $outputDir, int $visibility, bool $is_static): void
 {
     $basename = basename($filepath, '.php');
     $harnessName = "{$basename}_{$class}_{$method}_method_harness.php";
@@ -197,14 +204,25 @@ function generate_method_harness($filepath, $class, $method, $params, $inputs, $
     }
 
     $args = implode(', ', $argsList);
-    $harness .= "\$obj = new {$class}();\n";
 
-    if ($visibility === T_PRIVATE || $visibility === T_PROTECTED) {
-        $harness .= "\$method = new ReflectionMethod(\"{$class}\", \"{$method}\");\n";
-        $harness .= "\$method->setAccessible(true);\n";
-        $harness .= "\$method->invoke(\$obj" . ($args ? ", $args" : "") . ");\n";
+    if ($is_static) {
+        if ($visibility === T_PRIVATE || $visibility === T_PROTECTED) {
+            $harness .= "\$method = new ReflectionMethod(\"{$class}\", \"{$method}\");\n";
+            $harness .= "\$method->setAccessible(true);\n";
+            $harness .= "\$method->invoke(null" . ($args ? ", $args" : "") . ");\n";
+        } else {
+            $harness .= "{$class}::{$method}(" . ($args ? $args : "") . ");\n";
+        }
     } else {
-        $harness .= "\$obj->{$method}($args);\n";
+        $harness .= "\$obj = new {$class}();\n";
+
+        if ($visibility === T_PRIVATE || $visibility === T_PROTECTED) {
+            $harness .= "\$method = new ReflectionMethod(\"{$class}\", \"{$method}\");\n";
+            $harness .= "\$method->setAccessible(true);\n";
+            $harness .= "\$method->invoke(\$obj" . ($args ? ", $args" : "") . ");\n";
+        } else {
+            $harness .= "\$obj->{$method}(" . ($args ? ", $args" : "") . ");\n";
+        }
     }
 
     file_put_contents($outputPath, $harness);
@@ -215,8 +233,8 @@ if ($argc < 2) {
     echo "Usage: php {$argv[0]} <target_directory>\n";
     exit(1);
 }
-$targetDir = $argv[1] ?? '.';
-$outputDir = "$targetDir/.harness";
+$targetDir = $argv[1];
+$outputDir = "$targetDir/" . OUTPUT_FOLDER;
 
 if (!is_dir($outputDir)) {
     if (!mkdir($outputDir)) {
@@ -257,6 +275,7 @@ foreach ($phpFiles as $phpFile) {
                 $inputs,
                 $outputDir,
                 $method['visibility'],
+                $method['is_static'],
             );
         }
     }
