@@ -1,6 +1,7 @@
 <?php
 
 const OUTPUT_FOLDER = '.harness';
+const AVOID_FOLDERS = ['vendor', 'tests'];
 
 function extract_php_files(string $dir): array
 {
@@ -8,12 +9,23 @@ function extract_php_files(string $dir): array
     $files = [];
 
     foreach ($rii as $file) {
-        if ($file->isDir() || $file->getExtension() !== 'php' || str_starts_with($file->getPathname(), $dir . '/' . OUTPUT_FOLDER))
+        if ($file->isDir() || $file->getExtension() !== 'php' || str_starts_with($file->getPathname(), needle: $dir . '/' . OUTPUT_FOLDER) || in_array($file->getFilename(), AVOID_FOLDERS))
             continue;
         $files[] = $file->getPathname();
     }
 
     return $files;
+}
+
+function get_plugin_entry_file(string $dir): string
+{
+    $di = new DirectoryIterator($dir);
+    foreach ($di as $file) {
+        if ($file->isFile() && is_contain_plugin_name(file_get_contents($file->getPathname()))) {
+            return $file;
+        }
+    }
+    return '';
 }
 
 function extract_functions_and_methods(string $content): array
@@ -316,17 +328,14 @@ if (!is_dir($outputDir)) {
 }
 
 $phpFiles = extract_php_files($targetDir);
-$plugin_entry_file = '';
+$plugin_entry_file = get_plugin_entry_file($targetDir);
+if ($plugin_entry_file === '') {
+    echo "No plugin entry file found. Please ensure the plugin header is present in one of the files.\n";
+    exit(1);
+}
 
 foreach ($phpFiles as $phpFile) {
     $code = file_get_contents($phpFile);
-    // assert plugin entry file is the only file in root directory
-    if ($plugin_entry_file === '' && is_contain_plugin_name($code)) {
-        $plugin_entry_file = $phpFile;
-    } else if ($plugin_entry_file === '') {
-        echo "No plugin entry file found. Please ensure the plugin header is present in one of the files.\n";
-        exit(1);
-    }
 
     [$functions, $methods] = extract_functions_and_methods($code);
 
