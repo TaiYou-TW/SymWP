@@ -211,7 +211,7 @@ function generate_method_harness(string $filepath, string $class, string $method
             $harness .= "\$method->setAccessible(true);\n";
             $harness .= "\$method->invoke(null" . ($args ? ", $args" : "") . ");\n";
         } else {
-            $harness .= "{$class}::{$method}(" . ($args ? $args : "") . ");\n";
+            $harness .= "{$class}::{$method}(" . ($args ?: "") . ");\n";
         }
     } else {
         $harness .= "\$obj = new {$class}();\n";
@@ -221,7 +221,7 @@ function generate_method_harness(string $filepath, string $class, string $method
             $harness .= "\$method->setAccessible(true);\n";
             $harness .= "\$method->invoke(\$obj" . ($args ? ", $args" : "") . ");\n";
         } else {
-            $harness .= "\$obj->{$method}(" . ($args ? ", $args" : "") . ");\n";
+            $harness .= "\$obj->{$method}(" . ($args ?: "") . ");\n";
         }
     }
 
@@ -241,6 +241,8 @@ if (!is_dir($outputDir)) {
         echo "Failed to create output directory: $outputDir\n";
         exit(1);
     }
+} else {
+    array_map('unlink', glob("$outputDir/*.php"));
 }
 
 $phpFiles = extract_php_files($targetDir);
@@ -259,14 +261,14 @@ foreach ($phpFiles as $phpFile) {
 
     foreach ($functions as $function) {
         $inputs = extract_user_input_vars($function['body']);
-        if (!empty($inputs) || !empty($function['params'])) {
+        if (!empty($inputs)) {
             generate_function_harness($phpFile, $function, $inputs, $outputDir);
         }
     }
 
     foreach ($methods as $method) {
         $inputs = extract_user_input_vars($method['body']);
-        if (!empty($inputs) || !empty($method['params'])) {
+        if (!empty($inputs)) {
             generate_method_harness(
                 $phpFile,
                 $method['class'],
