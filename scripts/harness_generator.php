@@ -2,6 +2,8 @@
 
 const OUTPUT_FOLDER = '.harness';
 const AVOID_FOLDERS = ['vendor', 'tests'];
+const WP_REST_REQUEST = 'WP_REST_Request';
+const PLUGIN_FOLDER_PREFIX = 'wp-content/plugins/';
 
 function extract_php_files(string $dir): array
 {
@@ -78,7 +80,11 @@ function extract_functions_and_methods(string $content): array
                     break;
                 }
                 if ($start && is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE) {
-                    $params[] = substr($tokens[$i][1], 1);
+                    $params[] = [
+                        'type' => ($tokens[$i - 2][0] ?? null) === T_STRING ? $tokens[$i - 2][1] : ($tokens[$i - 2][0] ?? null),
+                        'name' => substr($tokens[$i][1], 1),
+                        'default' => $tokens[$i + 2] ?? null,
+                    ];
                 }
             }
 
@@ -146,6 +152,38 @@ function extract_user_input_vars(string $body): array
         }
     }
 
+    // TODO: those three patterns are not perfect and may not cover all cases.
+    // They may be false positives or false negatives. Implement a more robust solution later.
+
+    // ->get_param('key')
+    if (preg_match_all("/->get_param\s*\(\s*['\"]([^'\"]+)['\"]\s*\)/", $body, $matches)) {
+        foreach ($matches[1] as $match) {
+            $inputs['$request'][] = $match;
+        }
+    }
+
+    // ->get_query_params()['key']
+    if (preg_match_all("/->get_query_params\s*\(\s*\)\s*\[\s*['\"]([^'\"]+)['\"]\s*\]/", $body, $matches)) {
+        foreach ($matches[1] as $match) {
+            $inputs['$request'][] = $match;
+        }
+    }
+
+    // $request['key']
+    if (preg_match_all("/\$[a-zA-Z0-9_]+\s*\[\s*['\"]([^'\"]+)['\"]\s*\]/", $body, $matches)) {
+        // Be conservative: only include if variable is named `$request`
+        foreach ($matches[0] as $full) {
+            if (strpos($full, '$request') === 0) {
+                preg_match("/['\"]([^'\"]+)['\"]/", $full, $keyMatch);
+                if (!empty($keyMatch[1])) {
+                    $inputs['$request'][] = $keyMatch[1];
+                }
+            }
+        }
+    }
+
+    // TODO: $request->get_json_params()['key']
+
     return $inputs;
 }
 
@@ -186,25 +224,38 @@ function remove_all_php_files_from_folder(string $outputDir): void
     array_map('unlink', glob("$outputDir/*.php"));
 }
 
-function append_user_input_vars_to_harness(string &$harness, array $inputs, int $startIndex = 1): int
+function append_user_input_vars_to_harness(string &$harness, array $inputs, string $filepath, int $startIndex = 1): int
 {
     $argIndex = $startIndex;
     foreach ($inputs as $super => $vars) {
-        foreach ($vars as $var) {
-            $key = var_export($var, true);
-            $harness .= "{$super}[$key] = \$argv[{$argIndex}];\n";
-            $argIndex++;
+        if ($super === '$request') {
+            $harness .= "\$request = new WP_REST_Request('GET', '" . PLUGIN_FOLDER_PREFIX . "{$filepath}');\n";
+            foreach ($vars as $var) {
+                $key = var_export($var, true);
+                $harness .= "\$request->set_param($key, \$argv[$argIndex]);\n";
+                $argIndex++;
+            }
+        } else {
+            foreach ($vars as $var) {
+                $key = var_export($var, true);
+                $harness .= "{$super}[$key] = \$argv[{$argIndex}];\n";
+                $argIndex++;
+            }
         }
     }
     return $argIndex;
 }
 
-function append_function_params_to_harness(string &$harness, array $function, int $startIndex = 1): string
+function append_function_params_to_harness(string &$harness, array $parms, int $startIndex = 1): string
 {
     $argIndex = $startIndex;
     $argsList = [];
-    foreach ($function as $_) {
-        $argsList[] = "\$argv[{$argIndex}]";
+    foreach ($parms as $parm) {
+        if ($parm['type'] === WP_REST_REQUEST && $parm['name'] === 'request') {
+            $argsList[] = "\$request";
+        } else {
+            $argsList[] = "\$argv[{$argIndex}]";
+        }
         $argIndex++;
     }
 
@@ -221,7 +272,7 @@ function generate_function_harness(string $filepath, array $function, array $inp
     $harness = common_harness_header();
     $harness .= "require_once '$filepath';\n";
 
-    $argIndex = append_user_input_vars_to_harness($harness, $inputs);
+    $argIndex = append_user_input_vars_to_harness($harness, $inputs, $filepath);
     $args = append_function_params_to_harness($harness, $function['params'], $argIndex);
     $harness .= "{$funcname}({$args});\n";
 
@@ -238,7 +289,7 @@ function generate_method_harness(string $filepath, array $method, array $inputs,
     $harness = common_harness_header();
     $harness .= "require_once '$filepath';\n";
 
-    $argIndex = append_user_input_vars_to_harness($harness, $inputs);
+    $argIndex = append_user_input_vars_to_harness($harness, $inputs, $filepath);
     $args = append_function_params_to_harness($harness, $method['params'], $argIndex);
 
     if ($method['is_static']) {
@@ -303,7 +354,7 @@ function generate_inline_harness(string $filepath, array $inputs, string $output
     $outputPath = get_output_path($outputDir, $harnessName);
 
     $harness = common_harness_header();
-    append_user_input_vars_to_harness($harness, $inputs);
+    append_user_input_vars_to_harness($harness, $inputs, $filepath);
 
     $harness .= "require_once '$filepath';\n";
 
