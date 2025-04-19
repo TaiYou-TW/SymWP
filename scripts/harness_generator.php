@@ -22,7 +22,7 @@ function get_plugin_entry_file(string $dir): string
     $di = new DirectoryIterator($dir);
     foreach ($di as $file) {
         if ($file->isFile() && is_contain_plugin_name(file_get_contents($file->getPathname()))) {
-            return $file;
+            return $file->getPathname();
         }
     }
     return '';
