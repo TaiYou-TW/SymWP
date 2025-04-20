@@ -334,7 +334,9 @@ function is_inline_php_file(string $code): bool
 
             // function calls in global scope
             if ($depth === 0 && $token[0] === T_STRING && isset($tokens[$i + 1]) && $tokens[$i + 1] === '(') {
-                return true;
+                if ($token[1] != 'defined') { // Skip defined() function commonly used in plugin headers
+                    return true;
+                }
             }
         } else {
             if ($token === '{')
