@@ -261,7 +261,9 @@ function common_harness_header(): string
 <?php
 // This harness file is auto-generated. Do not edit.
 require 'wordpress-loader.php';
-require_once '$plugin_entry_file';\n
+require_once '$plugin_entry_file';
+do_action('plugins_loaded');
+
 EOT;
     return $output;
 }
