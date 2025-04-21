@@ -2,7 +2,17 @@
 
 const OUTPUT_FOLDER = '.harness';
 const AVOID_FOLDERS = ['vendor', 'tests'];
+
 const WP_REST_REQUEST = 'WP_REST_Request';
+const WP_REST_REQUEST_SET_PARAM = 'set_param';
+const WP_REST_REQUEST_SET_QUERY_PARAMS = 'set_query_params';
+const WP_REST_REQUEST_SET_BODY_PARAMS = 'set_body_params';
+const WP_REST_REQUEST_SET_PARAMS_METHODS = [
+    WP_REST_REQUEST_SET_PARAM,
+    WP_REST_REQUEST_SET_QUERY_PARAMS,
+    WP_REST_REQUEST_SET_BODY_PARAMS,
+];
+
 const PLUGIN_FOLDER_PREFIX = 'wp-content/plugins/';
 
 function extract_php_files(string $dir): array
@@ -158,14 +168,14 @@ function extract_user_input_vars(string $body): array
     // ->get_param('key')
     if (preg_match_all("/->get_param\s*\(\s*['\"]([^'\"]+)['\"]\s*\)/", $body, $matches)) {
         foreach ($matches[1] as $match) {
-            $inputs['$request'][] = $match;
+            $inputs[WP_REST_REQUEST_SET_PARAM][] = $match;
         }
     }
 
     // ->get_query_params()['key']
     if (preg_match_all("/->get_query_params\s*\(\s*\)\s*\[\s*['\"]([^'\"]+)['\"]\s*\]/", $body, $matches)) {
         foreach ($matches[1] as $match) {
-            $inputs['$request'][] = $match;
+            $inputs[WP_REST_REQUEST_SET_PARAM][] = $match;
         }
     }
 
@@ -176,13 +186,70 @@ function extract_user_input_vars(string $body): array
             if (strpos($full, '$request') === 0) {
                 preg_match("/['\"]([^'\"]+)['\"]/", $full, $keyMatch);
                 if (!empty($keyMatch[1])) {
-                    $inputs['$request'][] = $keyMatch[1];
+                    $inputs[WP_REST_REQUEST_SET_PARAM][] = $keyMatch[1];
                 }
             }
         }
     }
 
     // TODO: $request->get_json_params()['key']
+
+    $inputs += extract_user_input_vars_from_wp_rest_request($body);
+
+    return $inputs;
+}
+
+function extract_user_input_vars_from_wp_rest_request(string $body): array
+{
+    $tokens = token_get_all("<?php\n" . $body);
+    $paramVars = [];
+    $count = count($tokens);
+    $inputs = [];
+
+    // Step 1: Find "$params = $request->get_query_params();"
+    for ($i = 0; $i < $count - 6; $i++) {
+        if (
+            is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE &&
+            $tokens[$i + 2] === '=' &&
+            is_array($tokens[$i + 4]) && $tokens[$i + 4][0] === T_VARIABLE && $tokens[$i + 4][1] === '$request' &&
+            is_array($tokens[$i + 5]) && $tokens[$i + 5][0] === T_OBJECT_OPERATOR &&
+            is_array($tokens[$i + 6]) && $tokens[$i + 6][0] === T_STRING &&
+            ($tokens[$i + 6][1] === 'get_query_params' || $tokens[$i + 6][1] === 'get_body_params')
+        ) {
+            if ($tokens[$i + 6][1] === 'get_query_params') {
+                $super = WP_REST_REQUEST_SET_QUERY_PARAMS;
+            } else if ($tokens[$i + 6][1] === 'get_body_params') {
+                $super = WP_REST_REQUEST_SET_BODY_PARAMS;
+            } else {
+                echo "Error: Unknown method {$tokens[$i + 6][1]}.\n";
+                continue;
+            }
+            $paramVars[] = [
+                'var' => $tokens[$i][1],
+                'method' => $super,
+            ];
+        }
+    }
+
+    // Step 2: Track accesses to those vars: $params['page']
+    for ($i = 0; $i < $count - 3; $i++) {
+        if (
+            is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE &&
+            in_array($tokens[$i][1], array_column($paramVars, 'var')) &&
+            $tokens[$i + 1] === '[' &&
+            is_array($tokens[$i + 2]) && $tokens[$i + 2][0] === T_CONSTANT_ENCAPSED_STRING
+        ) {
+            $paramVar = array_filter($paramVars, fn($var) => $var['var'] === $tokens[$i][1]);
+            if (empty($paramVar)) {
+                echo "Error: Unknown variable {$tokens[$i][1]}.\n";
+                continue;
+            }
+            $paramVar = array_values($paramVar)[0];
+            $super = $paramVar['method'];
+            $key = trim($tokens[$i + 2][1], "'\"");
+            $inputs[$super][] = $key;
+        }
+    }
 
     return $inputs;
 }
@@ -227,13 +294,27 @@ function remove_all_php_files_from_folder(string $outputDir): void
 function append_user_input_vars_to_harness(string &$harness, array $inputs, string $filepath, int $startIndex = 1): int
 {
     $argIndex = $startIndex;
+    $wp_rest_request_init = false;
     foreach ($inputs as $super => $vars) {
-        if ($super === '$request') {
-            $harness .= "\$request = new WP_REST_Request('GET', '" . PLUGIN_FOLDER_PREFIX . "{$filepath}');\n";
-            foreach ($vars as $var) {
-                $key = var_export($var, true);
-                $harness .= "\$request->set_param($key, \$argv[$argIndex]);\n";
-                $argIndex++;
+        if (in_array($super, WP_REST_REQUEST_SET_PARAMS_METHODS)) {
+            if (!$wp_rest_request_init) {
+                $harness .= "\$request = new WP_REST_Request('GET', '" . PLUGIN_FOLDER_PREFIX . "{$filepath}');\n";
+                $wp_rest_request_init = true;
+            }
+            if ($super === WP_REST_REQUEST_SET_PARAM) {
+                foreach ($vars as $var) {
+                    $key = var_export($var, true);
+                    $harness .= "\$request->$super($key, \$argv[{$argIndex}]);\n";
+                    $argIndex++;
+                }
+            } elseif ($super === WP_REST_REQUEST_SET_QUERY_PARAMS || $super === WP_REST_REQUEST_SET_BODY_PARAMS) {
+                $harness .= "\$params = [];\n";
+                foreach ($vars as $var) {
+                    $key = var_export($var, true);
+                    $harness .= "\$params[$key] = \$argv[{$argIndex}];\n";
+                    $argIndex++;
+                }
+                $harness .= "\$request->$super(\$params);\n";
             }
         } else {
             foreach ($vars as $var) {
