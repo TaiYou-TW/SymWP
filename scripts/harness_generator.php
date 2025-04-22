@@ -48,13 +48,23 @@ function extract_functions_and_methods(string $content): array
     $count = count($tokens);
 
     $inClass = false;
+    $namespace = '';
     $className = '';
     $visibility = T_PUBLIC;
 
     for ($i = 0; $i < $count; $i++) {
+        // namespace
+        if (is_array($tokens[$i]) && $tokens[$i][0] === T_NAMESPACE) {
+            $i += 2;
+            if (is_array($tokens[$i]) && in_array($tokens[$i][0], [T_NAME_FULLY_QUALIFIED, T_NAME_QUALIFIED, T_NAME_RELATIVE])) {
+                $namespace = "{$tokens[$i][1]}\\";
+            }
+            continue;
+        }
+
         if ($tokens[$i][0] === T_CLASS && $tokens[$i + 2][0] === T_STRING) {
             $inClass = true;
-            $className = $tokens[$i + 2][1];
+            $className = $namespace . $tokens[$i + 2][1];
             continue;
         }
 
@@ -275,6 +285,7 @@ function is_contain_plugin_name(string $code): string
 
 function get_output_path(string $outputDir, string $filename): string
 {
+    $filename = str_replace(['\\', '/'], '-', $filename);
     return $outputDir . DIRECTORY_SEPARATOR . $filename;
 }
 
