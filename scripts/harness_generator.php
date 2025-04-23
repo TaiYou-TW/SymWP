@@ -285,7 +285,7 @@ function is_contain_plugin_name(string $code): string
 
 function get_output_path(string $outputDir, string $filename): string
 {
-    $filename = str_replace(['\\', '/'], '-', $filename);
+    $filename = str_replace(['\\', '/', ' '], '-', $filename);
     return $outputDir . DIRECTORY_SEPARATOR . $filename;
 }
 
