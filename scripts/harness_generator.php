@@ -7,10 +7,12 @@ const WP_REST_REQUEST = 'WP_REST_Request';
 const WP_REST_REQUEST_SET_PARAM = 'set_param';
 const WP_REST_REQUEST_SET_QUERY_PARAMS = 'set_query_params';
 const WP_REST_REQUEST_SET_BODY_PARAMS = 'set_body_params';
+const WP_REST_REQUEST_SET_BODY = 'set_body';
 const WP_REST_REQUEST_SET_PARAMS_METHODS = [
     WP_REST_REQUEST_SET_PARAM,
     WP_REST_REQUEST_SET_QUERY_PARAMS,
     WP_REST_REQUEST_SET_BODY_PARAMS,
+    WP_REST_REQUEST_SET_BODY,
 ];
 
 const PLUGIN_FOLDER_PREFIX = 'wp-content/plugins/';
@@ -190,17 +192,13 @@ function extract_user_input_vars(string $body): array
     }
 
     // $request['key']
-    if (preg_match_all("/\$[a-zA-Z0-9_]+\s*\[\s*['\"]([^'\"]+)['\"]\s*\]/", $body, $matches)) {
-        // Be conservative: only include if variable is named `$request`
-        foreach ($matches[0] as $full) {
-            if (strpos($full, '$request') === 0) {
-                preg_match("/['\"]([^'\"]+)['\"]/", $full, $keyMatch);
-                if (!empty($keyMatch[1])) {
-                    $inputs[WP_REST_REQUEST_SET_PARAM][] = $keyMatch[1];
-                }
-            }
+    // Be conservative: only include if variable is named `$request`
+    if (preg_match_all("/\\\$request\s*\[\s*['\"]([^'\"]+)['\"]\s*\]/", $body, $matches)) {
+        foreach ($matches[1] as $key => $value) {
+            $inputs[WP_REST_REQUEST_SET_PARAM][] = $value;
         }
     }
+
 
     // TODO: $request->get_json_params()['key']
 
@@ -224,12 +222,14 @@ function extract_user_input_vars_from_wp_rest_request(string $body): array
             is_array($tokens[$i + 4]) && $tokens[$i + 4][0] === T_VARIABLE && $tokens[$i + 4][1] === '$request' &&
             is_array($tokens[$i + 5]) && $tokens[$i + 5][0] === T_OBJECT_OPERATOR &&
             is_array($tokens[$i + 6]) && $tokens[$i + 6][0] === T_STRING &&
-            ($tokens[$i + 6][1] === 'get_query_params' || $tokens[$i + 6][1] === 'get_body_params')
+            ($tokens[$i + 6][1] === 'get_query_params' || $tokens[$i + 6][1] === 'get_body_params' || $tokens[$i + 6][1] === 'get_json_params')
         ) {
             if ($tokens[$i + 6][1] === 'get_query_params') {
                 $super = WP_REST_REQUEST_SET_QUERY_PARAMS;
             } else if ($tokens[$i + 6][1] === 'get_body_params') {
                 $super = WP_REST_REQUEST_SET_BODY_PARAMS;
+            } else if ($tokens[$i + 6][1] === 'get_json_params') {
+                $super = WP_REST_REQUEST_SET_BODY;
             } else {
                 echo "Error: Unknown method {$tokens[$i + 6][1]}.\n";
                 continue;
@@ -257,7 +257,9 @@ function extract_user_input_vars_from_wp_rest_request(string $body): array
             $paramVar = array_values($paramVar)[0];
             $super = $paramVar['method'];
             $key = trim($tokens[$i + 2][1], "'\"");
-            $inputs[$super][] = $key;
+            if (!isset($inputs[$super]) || !in_array($key, $inputs[$super])) {
+                $inputs[$super][] = $key;
+            }
         }
     }
 
@@ -304,6 +306,18 @@ function remove_all_php_files_from_folder(string $outputDir): void
     array_map('unlink', glob("$outputDir/*.php"));
 }
 
+function get_wp_request_method(array $inputs): string
+{
+    foreach ($inputs as $super => $_) {
+        if (in_array($super, WP_REST_REQUEST_SET_PARAMS_METHODS)) {
+            if ($super === WP_REST_REQUEST_SET_BODY_PARAMS || $super === WP_REST_REQUEST_SET_BODY) {
+                return 'POST';
+            }
+        }
+    }
+    return 'GET';
+}
+
 function append_user_input_vars_to_harness(string &$harness, array $inputs, string $filepath, int $startIndex = 1): int
 {
     $argIndex = $startIndex;
@@ -311,7 +325,8 @@ function append_user_input_vars_to_harness(string &$harness, array $inputs, stri
     foreach ($inputs as $super => $vars) {
         if (in_array($super, WP_REST_REQUEST_SET_PARAMS_METHODS)) {
             if (!$wp_rest_request_init) {
-                $harness .= "\$request = new WP_REST_Request('GET', '" . PLUGIN_FOLDER_PREFIX . "{$filepath}');\n";
+                $method = get_wp_request_method($inputs);
+                $harness .= "\$request = new WP_REST_Request('{$method}', '" . PLUGIN_FOLDER_PREFIX . "{$filepath}');\n";
                 $wp_rest_request_init = true;
             }
             if ($super === WP_REST_REQUEST_SET_PARAM) {
@@ -328,6 +343,16 @@ function append_user_input_vars_to_harness(string &$harness, array $inputs, stri
                     $argIndex++;
                 }
                 $harness .= "\$request->$super(\$params);\n";
+            } elseif ($super === WP_REST_REQUEST_SET_BODY) {
+                $harness .= "\$request->set_header('Content-Type', 'application/json');\n";
+                $args = '';
+                foreach ($vars as $var) {
+                    $key = var_export($var, true);
+                    $args .= "    {$key} => \$argv[{$argIndex}],\n";
+                    $argIndex++;
+                }
+
+                $harness .= "\$request->set_body(json_encode([\n$args]));\n";
             }
         } else {
             foreach ($vars as $var) {
