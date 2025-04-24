@@ -431,3 +431,6 @@ require ABSPATH . WPINC . '/pluggable.php';
 require ABSPATH . WPINC . '/pluggable-deprecated.php';
 
 require_once ABSPATH . '/wp-admin/includes/admin.php';
+
+// Use admin as current user to avoid permission problem
+wp_set_current_user(1);
