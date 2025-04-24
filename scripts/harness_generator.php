@@ -199,10 +199,14 @@ function extract_user_input_vars(string $body): array
         }
     }
 
+    // ->get_json_params()['key']
+    if (preg_match_all("/->get_json_params\s*\(\s*\)\s*\[\s*['\"]([^'\"]+)['\"]\s*\]/", $body, $matches)) {
+        foreach ($matches[1] as $match) {
+            $inputs[WP_REST_REQUEST_SET_BODY][] = $match;
+        }
+    }
 
-    // TODO: $request->get_json_params()['key']
-
-    $inputs += extract_user_input_vars_from_wp_rest_request($body);
+    $inputs = array_merge_recursive($inputs, extract_user_input_vars_from_wp_rest_request($body));
 
     return $inputs;
 }
