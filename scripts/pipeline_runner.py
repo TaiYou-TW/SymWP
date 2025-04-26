@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from subprocess import TimeoutExpired
 
 HARNESS_GEN_SCRIPT = "harness_generator.php"
 DYNAMIC_CHECKER = "DynamicTaintChecker.php"
@@ -36,7 +37,12 @@ def setup_s2e_project(plugin_name, harness_path, argv_count, project_name):
     
     # Run S2E command to new project
     print(f"[+] Generating new project...")
-    subprocess.run(["s2e", "new_project","-f", "-n", project_name, PHP_PATH, harness_path], check=True)
+    subprocess.run(
+        ["s2e", "new_project","-f", "-n", project_name, PHP_PATH, harness_path],
+        check=True,
+        stdout=subprocess.DEVNULL, 
+        stderr=subprocess.DEVNULL,
+    )
 
     print(f"[+] Rewriting configs...")
     bootstrap_path = proj_path / "bootstrap.sh"
@@ -83,18 +89,25 @@ def setup_s2e_project(plugin_name, harness_path, argv_count, project_name):
 
     shutil.copy("wordpress-loader.php", proj_path)
 
-def run_s2e(project_name):
+def run_s2e(project_name, project_path):
     print(f"[+] Running S2E on {project_name}...")
-    subprocess.run(
-        ["s2e", "run", '-n', '-t', str(TIMEOUT_MINUTES), '-c', str(CORE), project_name],
-        stdout=subprocess.DEVNULL, 
-        stderr=subprocess.DEVNULL,
-    )
+    try:
+        with open(project_path + '/stdout.txt', 'w') as f:
+            subprocess.run(
+                ["s2e", "run", '-n', '-t', str(TIMEOUT_MINUTES), '-c', str(CORE), project_name],
+                stdout=f, 
+                stderr=subprocess.DEVNULL,
+                # S2E's timeout option will not work sometime, make sure it will finish in time
+                timeout=TIMEOUT_MINUTES * 60,
+            )
+    except TimeoutExpired:
+        pass
+        
 
 def extract_symbolic_args(project_path):
     print("[+] Analyzing S2E output...")
     args = set()
-    for log_file in Path(project_path).rglob("*.log"):
+    for log_file in Path(project_path).rglob("stdout.txt"):
         with open(log_file, "r") as f:
             for line in f:
                 match = re.search(r'exploitable_args\[0x[\da-f]+\] = v\d+_arg(\d+)_\d+', line) # exploitable_args[0x7fa37c244838] = v0_arg2_0
@@ -105,7 +118,7 @@ def extract_symbolic_args(project_path):
 # TODO: use symbolic_args after implementation of DYNAMIC_CHECKER
 def run_dynamic_checker(harness_path, symbolic_args):
     print(f"[+] Running dynamic analysis on {Path(harness_path).name} with symbolic args: {symbolic_args}")
-    result = subprocess.run(["php", DYNAMIC_CHECKER, harness_path], capture_output=True, text=True)
+    result = subprocess.run(["php", DYNAMIC_CHECKER, harness_path], capture_output=True, text=True, check=True)
     return result.stdout
 
 def main():
@@ -130,15 +143,15 @@ def main():
         argv_count = get_argv_count(harness_path)
 
         setup_s2e_project(plugin_name, harness_path, argv_count, project_name)
-        run_s2e(project_name)
+        project_path = Path(S2E_PROJECTS_DIR) / project_name
+        run_s2e(project_name, project_path)
 
-        symbolic_args = extract_symbolic_args(Path(S2E_PROJECTS_DIR) / project_name)
+        symbolic_args = extract_symbolic_args(project_path)
         if not symbolic_args:
             print("[-] No symbolic arguments detected.")
             continue
 
         result = run_dynamic_checker(harness_path, symbolic_args)
-        print(result)
         with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.args", 'w') as f:
             f.write('\n'.join(str(arg) for arg in symbolic_args))
         with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.dynamic", 'w') as f:
