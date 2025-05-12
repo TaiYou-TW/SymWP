@@ -66,7 +66,7 @@ private:
     std::unordered_map<std::string, uint64_t> symbolic_args;
     std::unordered_map<std::string, uint64_t> exploitable_args;
 
-    void printExploitableSymbolicArgs(S2EExecutionState *state, uint64_t address);
+    void printExploitableSymbolicArgs(S2EExecutionState *state, uint64_t address, uint64_t size);
     void addConstraintToSymbolicString(S2EExecutionState *state, uint64_t address, uint64_t size);
 };
 
