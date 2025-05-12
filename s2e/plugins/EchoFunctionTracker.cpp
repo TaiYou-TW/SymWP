@@ -92,13 +92,13 @@ void EchoFunctionTracker::onCall(S2EExecutionState *state, const ModuleDescripto
         getDebugStream(state) << "[" << hexval(m_address) << "] Received symbolic memory access\n";
         getDebugStream(state) << "[" << hexval(m_address) << "] arg1: " << hexval(arg1) << "\n";
 
-        printExploitableSymbolicArgs(state, arg1);
+        printExploitableSymbolicArgs(state, arg1, arg2);
 
-        addConstraintToSymbolicString(state, arg1, arg2);
+        // addConstraintToSymbolicString(state, arg1, arg2);
     } else {
-        // std::string str;
-        // state->mem()->readString(arg1, str, arg2);
-        // getDebugStream(state) << "[" << hexval(m_address) << "] Received string: " << str << "\n";
+        std::string str;
+        state->mem()->readString(arg1, str, arg2);
+        getDebugStream(state) << "[" << hexval(m_address) << "] Received string: " << str << "\n";
         // s2e()->getExecutor()->terminateState(*state,
         //                                      "[" + hexval(m_address).str() + "] Non-symbolic memory access:" + str);
     }
@@ -124,17 +124,24 @@ void EchoFunctionTracker::onSymbolicVariableCreation(S2EExecutionState *state, c
     getDebugStream(state) << "  Address: " << hexval(address) << "\n";
     symbolic_args[arrayName] = address;
 
-    // TODO: fix this
-    // add constrint to the symbolic string, ascii only
+    // byte is printable OR zero
     for (uint64_t i = 0; i < array->getSize(); ++i) {
         klee::ref<klee::Expr> byteExpr = state->mem()->read(address + i);
         if (byteExpr) {
-            klee::ref<klee::Expr> asciiExpr = klee::ConstantExpr::create(0x7F, byteExpr->getWidth());
-            klee::ref<klee::Expr> constraint = klee::SleExpr::create(byteExpr, asciiExpr);
-            if (!state->addConstraint(constraint, true)) {
+            klee::ref<klee::Expr> ge20 =
+                klee::SgeExpr::create(byteExpr, klee::ConstantExpr::create(0x20, byteExpr->getWidth()));
+            klee::ref<klee::Expr> le7E =
+                klee::SleExpr::create(byteExpr, klee::ConstantExpr::create(0x7E, byteExpr->getWidth()));
+            klee::ref<klee::Expr> asciiPrintable = klee::AndExpr::create(ge20, le7E);
+
+            klee::ref<klee::Expr> isNull =
+                klee::EqExpr::create(byteExpr, klee::ConstantExpr::create(0, byteExpr->getWidth()));
+
+            klee::ref<klee::Expr> validChar = klee::OrExpr::create(asciiPrintable, isNull);
+
+            if (!state->addConstraint(validChar, true)) {
                 s2e()->getExecutor()->terminateState(*state, "Tried to add an invalid constraint");
             }
-            getDebugStream(state) << "Adding constraint: " << byteExpr << " <= " << asciiExpr << "\n";
         }
     }
 }
@@ -163,17 +170,20 @@ void EchoFunctionTracker::handleOpcodeInvocation(S2EExecutionState *state, uint6
     }
 }
 
-void EchoFunctionTracker::printExploitableSymbolicArgs(S2EExecutionState *state, uint64_t address) {
+void EchoFunctionTracker::printExploitableSymbolicArgs(S2EExecutionState *state, uint64_t address, uint64_t size) {
     std::set<std::string> foundNames;
 
-    klee::ref<klee::Expr> byteExpr = state->mem()->read(address);
-    if (byteExpr) {
-        std::vector<klee::ref<klee::ReadExpr>> reads;
-        klee::findReads(byteExpr, false, reads);
+    for (uint64_t i = 0; i < size; i++) {
+        klee::ref<klee::Expr> byteExpr = state->mem()->read(address + i);
+        if (byteExpr) {
+            getDebugStream(state) << "Value: " << byteExpr << "\n";
+            std::vector<klee::ref<klee::ReadExpr>> reads;
+            klee::findReads(byteExpr, false, reads);
 
-        for (const auto &read : reads) {
-            auto &array = read->getUpdates()->getRoot();
-            foundNames.insert(array->getName());
+            for (const auto &read : reads) {
+                auto &array = read->getUpdates()->getRoot();
+                foundNames.insert(array->getName());
+            }
         }
     }
 
@@ -185,15 +195,20 @@ void EchoFunctionTracker::printExploitableSymbolicArgs(S2EExecutionState *state,
     }
 }
 
+// TODO: buggy function, will crash the engine with unknown reason
 void EchoFunctionTracker::addConstraintToSymbolicString(S2EExecutionState *state, uint64_t address, uint64_t size) {
     bool foundNull = false;
     for (uint64_t i = 0; i < size; ++i) {
+        getDebugStream(state) << "Checking memory at " << hexval(address + i) << "\n";
         klee::ref<klee::Expr> byteExpr = state->mem()->read(address + i);
-        if (!byteExpr) {
+        getDebugStream(state) << "Reading memory at " << hexval(address + i) << "\n";
+        getDebugStream(state) << "  Value: " << byteExpr << "\n";
+        if (byteExpr == NULL) {
             continue;
         }
 
         if (foundNull) {
+            getDebugStream(state) << "FoundNull " << i << "\n";
             klee::ref<klee::Expr> nullExpr = klee::ConstantExpr::create(0, byteExpr->getWidth());
             klee::ref<klee::Expr> constraint = klee::EqExpr::create(byteExpr, nullExpr);
             if (!state->addConstraint(constraint)) {
@@ -202,25 +217,22 @@ void EchoFunctionTracker::addConstraintToSymbolicString(S2EExecutionState *state
             getDebugStream(state) << "Adding constraint: " << byteExpr << " == " << nullExpr << "\n";
             continue;
         }
-
+        getDebugStream(state) << "Checking if byte is concrete or symbolic\n";
         // concrete value
-        if (klee::ConstantExpr *ce = llvm::dyn_cast<klee::ConstantExpr>(byteExpr)) {
-            if (ce->isZero()) {
-                foundNull = true;
-                getDebugStream(state) << "Found null byte at offset " << i << "\n";
-                continue;
-            }
-        } else {
+        if (byteExpr->isZero()) {
+            foundNull = true;
+            getDebugStream(state) << "Found null byte at offset " << i << "\n";
+            continue;
+        } else if (!isa<klee::ConstantExpr>(byteExpr)) {
             // symbolic value
             // if possible solution may be zero, fork the state to add constraints
-            klee::ArrayPtr array = llvm::cast<klee::ReadExpr>(byteExpr)->getUpdates()->getRoot();
-            klee::ref<klee::Expr> value = state->concolics->evaluate(array, i);
-            uint64_t concrete = llvm::cast<klee::ConstantExpr>(value)->getZExtValue();
-            if (concrete == 0) {
+            getDebugStream(state) << "Found symbolic byte: " << byteExpr << " at offset " << i << "\n";
+            klee::ref<klee::Expr> value = state->concolics->evaluate(byteExpr);
+            if (value == 0) {
                 foundNull = true;
                 getDebugStream(state) << "Found symbolic zero byte at offset " << i << "\n";
             } else {
-                getDebugStream(state) << "Found symbolic non-zero byte: " << concrete << " at offset " << i << "\n";
+                getDebugStream(state) << "Found symbolic non-zero byte: " << value << " at offset " << i << "\n";
             }
         }
     }
