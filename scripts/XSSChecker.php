@@ -1,6 +1,6 @@
 <?php
 
-class DynamicTaintChecker
+class XSSChecker
 {
     private const ARGV_COUNT = 10; // Number of arguments to pass to the harness
     private const SPECIAL_SYMBOLS = [
@@ -25,7 +25,7 @@ class DynamicTaintChecker
     {
         $output = $this->run_harness();
 
-        file_put_contents('.dynamic_output.html', $output);
+        file_put_contents('.XSSChecker_output.html', $output);
         echo "== Output Analysis for: $this->harnessPath ==\n";
 
         return $this->detect_taint_exposure($output);
@@ -81,7 +81,7 @@ if ($argv && $argv[0] && realpath($argv[0]) === __FILE__) {
     if (count($argv) < 2) {
         die("Usage: php {$argv[0]} <harness_file>\n");
     }
-    $checker = new DynamicTaintChecker($argv[1]);
+    $checker = new XSSChecker($argv[1]);
     $issues = $checker->run();
 
     if (empty($issues)) {
