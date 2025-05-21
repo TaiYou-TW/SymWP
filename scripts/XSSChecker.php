@@ -48,7 +48,7 @@ class XSSChecker
         $results[] = "⚠️ Taint marker found in output";
 
         // Check injection in tag
-        $tag_pattern = '/<([^\/>]+' . self::TAINT_START_MARKER . '.*' . self::TAINT_END_MARKER . '[^>]*)>/i';
+        $tag_pattern = '/<([^>]+' . self::TAINT_START_MARKER . '.*' . self::TAINT_END_MARKER . '[^>]*)>/i';
         preg_match_all($tag_pattern, $output, $result);
         if (is_array($result)) {
             foreach ($result[1] as $index => $tag) {
@@ -65,7 +65,8 @@ class XSSChecker
 
         // Check injection between tags
         // Find if there are any tags with tainted marker can be inserted after tags
-        $tag_pattern = '/(?:(?:(?:(?:<[^\/>]+>[^<]*<\/[^>]+>)|(?:<[^\/>]+\/?>))\\s*.*))' . self::TAINT_START_MARKER . '.*((<[^\/>]+>[^<]*<\/[^>]+>)|(<[^\/>]+\/\\s*>)).*' . self::TAINT_END_MARKER . '/i';
+        // RegEx: <tag>, start_marker, <tag>, end_marker
+        $tag_pattern = '/<[^>]+>[^<]*' . self::TAINT_START_MARKER . '.*(<[^>]+>).*' . self::TAINT_END_MARKER . '/i';
         preg_match_all($tag_pattern, $output, $result);
         if (is_array($result)) {
             foreach ($result[1] as $tag) {
