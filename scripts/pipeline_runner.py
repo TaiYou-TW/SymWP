@@ -7,7 +7,8 @@ from pathlib import Path
 from subprocess import TimeoutExpired
 
 HARNESS_GEN_SCRIPT = "harness_generator.php"
-DYNAMIC_CHECKER = "DynamicTaintChecker.php"
+XSS_CHECKER = "XSSChecker.php"
+SQLI_CHECKER = "SQLiChecker.php"
 
 S2E_BOOTSTRAP_TEMPLATE_PATH = "bootstrap_template.sh"
 PHP_PATH = "../php-src/sapi/cli/php"
@@ -17,8 +18,8 @@ S2E_PROJECTS_DIR = "projects"
 HARNESS_DIR = ".harness"
 OUTPUT_DIR = "SymWP"
 
-TIMEOUT_MINUTES = 10
-ARGV_LENGTH = 10
+TIMEOUT_MINUTES = 30
+ARGV_LENGTH = 20
 CORE = 16
 
 def generate_harnesses(plugin_folder):
@@ -70,7 +71,9 @@ def setup_s2e_project(plugin_name, harness_path, argv_count, project_name):
     # enable plugins in s2e-config.lua
     s2e_config_path = proj_path / "s2e-config.lua"
     with open(s2e_config_path, 'a') as f:
-        f.write('\nadd_plugin("FunctionMonitor")\nadd_plugin("EchoFunctionTracker")\npluginsConfig.EchoFunctionTracker = {\n    addressToTrack = 0xa9839b,\n}')
+        f.write('\nadd_plugin("FunctionMonitor")\n')
+        f.write('add_plugin("EchoFunctionTracker")\npluginsConfig.EchoFunctionTracker = {\n    addressToTrack = 0xb4b2e3,\n}\n')
+        f.write('add_plugin("SqliteFunctionTracker")\npluginsConfig.SqliteFunctionTracker = {\n    addressToTrack = 0x8bf782,\n}\n')
 
     print(f"[+] Copying files...")
     plugin_zip = f"{plugin_name}.tar.gz"
@@ -92,7 +95,7 @@ def setup_s2e_project(plugin_name, harness_path, argv_count, project_name):
 def run_s2e(project_name, project_path):
     print(f"[+] Running S2E on {project_name}...")
     try:
-        with open(project_path + '/stdout.txt', 'w') as f:
+        with open(str(project_path) + '/stdout.txt', 'w') as f:
             subprocess.run(
                 ["s2e", "run", '-n', '-t', str(TIMEOUT_MINUTES), '-c', str(CORE), project_name],
                 stdout=f, 
@@ -102,24 +105,59 @@ def run_s2e(project_name, project_path):
             )
     except TimeoutExpired:
         pass
-        
 
 def extract_symbolic_args(project_path):
     print("[+] Analyzing S2E output...")
-    args = set()
+    xss_args = set()
+    sqli_args = []
     for log_file in Path(project_path).rglob("stdout.txt"):
-        with open(log_file, "r") as f:
+        with open(log_file, "r", errors='ignore') as f:
             for line in f:
-                match = re.search(r'exploitable_args\[0x[\da-f]+\] = v\d+_arg(\d+)_\d+', line) # exploitable_args[0x7fa37c244838] = v0_arg2_0
-                if match:
-                    args.add(int(match.group(1)))
-    return sorted(args)
+                xss_match = re.search(r'exploitable_args\[0x[\da-f]+\] = v\d+_arg(\d+)_\d+', line) # exploitable_args[0x7fa37c244838] = v0_arg2_0
+                if xss_match:
+                    xss_args.add(int(xss_match.group(1)))
+                sqli_matches = re.findall(r'v\d+_arg\d+_\d+ = {[^}]*}; \(string\) "([^)]*)"', line)
+                if sqli_matches and 'SqliteFunctionTracker: Test case:' in line:
+                    sqli_args += [sqli_matches]
 
-# TODO: use symbolic_args after implementation of DYNAMIC_CHECKER
+    # logs may not complete, delete those not have enough args
+    if (len(sqli_args) > 0):
+        max = len(sqli_args[0])
+        for arg in sqli_args:
+            if len(arg) > max:
+                max = len(arg)
+        sqli_args = [arg for arg in sqli_args if len(arg) == max]
+
+    return {
+        'xss': sorted(xss_args),
+        'sqli': sqli_args,
+    }
+
+# TODO: use symbolic_args after implementation of XSS_CHECKER
 def run_dynamic_checker(harness_path, symbolic_args):
     print(f"[+] Running dynamic analysis on {Path(harness_path).name} with symbolic args: {symbolic_args}")
-    result = subprocess.run(["php", DYNAMIC_CHECKER, harness_path], capture_output=True, text=True, check=True)
-    return result.stdout
+    result = ''
+    if len(symbolic_args['xss']) > 0:
+        result = '[+] XSSChecker:\n'
+        try:
+            result += subprocess.run(["php", XSS_CHECKER, harness_path], capture_output=True, text=True, check=True).stdout
+        except e:
+            result += "Error running XSSChecker\n"
+    else:
+        result += "[-] No XSS arguments found.\n"
+
+    if len(symbolic_args['sqli']) > 0:
+        result += '[+] SQLiChecker:\n'
+        for arg in symbolic_args['sqli']:
+            result += f"[*] Testing {arg}\n"
+            try:
+                result += subprocess.run(["php", SQLI_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
+            except:
+                result += "Error running SQLiChecker\n"
+    else:
+        result += "[-] No SQLi arguments found.\n"
+
+    return result
 
 def main():
     if len(sys.argv) != 2:
@@ -138,24 +176,32 @@ def main():
 
     harnesses = list((harness_dir).rglob('*.php'))
     for harness in harnesses:
-        harness_path = str(harness)
-        project_name = f"{plugin_name}_{harness.stem}"
-        argv_count = get_argv_count(harness_path)
+        try:
+            harness_path = str(harness)
+            project_name = f"{plugin_name}_{harness.stem}"
+            argv_count = get_argv_count(harness_path)
 
-        setup_s2e_project(plugin_name, harness_path, argv_count, project_name)
-        project_path = Path(S2E_PROJECTS_DIR) / project_name
-        run_s2e(project_name, project_path)
+            setup_s2e_project(plugin_name, harness_path, argv_count, project_name)
+            project_path = Path(S2E_PROJECTS_DIR) / project_name
+            run_s2e(project_name, project_path)
 
-        symbolic_args = extract_symbolic_args(project_path)
-        if not symbolic_args:
-            print("[-] No symbolic arguments detected.")
+            symbolic_args = extract_symbolic_args(project_path)
+            if not symbolic_args:
+                print("[-] No symbolic arguments detected.")
+                continue
+
+            result = run_dynamic_checker(harness_path, symbolic_args)
+            with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.args", 'w') as f:
+                f.write('XSS: ')
+                f.write(', '.join(str(arg) for arg in symbolic_args['xss']))
+                f.write('\nSQLi: ')
+                f.write(', '.join(str(arg) for arg in symbolic_args['sqli']))
+            with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.dynamic", 'w') as f:
+                f.write(result)
+            print(result)
+        except KeyboardInterrupt:
+            print("[-] User interrupted the process.")
             continue
-
-        result = run_dynamic_checker(harness_path, symbolic_args)
-        with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.args", 'w') as f:
-            f.write('\n'.join(str(arg) for arg in symbolic_args))
-        with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.dynamic", 'w') as f:
-            f.write(result)
 
 if __name__ == "__main__":
     main()
