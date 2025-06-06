@@ -27,55 +27,46 @@
 
 #include <s2e/Plugins/Core/BaseInstructions.h>
 
-namespace s2e
-{
-    namespace plugins
-    {
+namespace s2e {
+namespace plugins {
 
-        enum S2E_SQLITEFUNCTIONTRACKER_COMMANDS
-        {
-            // TODO: customize list of commands here
-            COMMAND_1
-        };
+enum S2E_SQLITEFUNCTIONTRACKER_COMMANDS {
+    // TODO: customize list of commands here
+    COMMAND_1
+};
 
-        struct S2E_SQLITEFUNCTIONTRACKER_COMMAND
-        {
-            S2E_SQLITEFUNCTIONTRACKER_COMMANDS Command;
-            union
-            {
-                // Command parameters go here
-                uint64_t param;
-            };
-        };
+struct S2E_SQLITEFUNCTIONTRACKER_COMMAND {
+    S2E_SQLITEFUNCTIONTRACKER_COMMANDS Command;
+    union {
+        // Command parameters go here
+        uint64_t param;
+    };
+};
 
-        class SqliteFunctionTracker : public Plugin, public IPluginInvoker
-        {
+class SqliteFunctionTracker : public Plugin, public IPluginInvoker {
 
-            S2E_PLUGIN
-        public:
-            SqliteFunctionTracker(S2E *s2e) : Plugin(s2e)
-            {
-            }
+    S2E_PLUGIN
+public:
+    SqliteFunctionTracker(S2E *s2e) : Plugin(s2e) {
+    }
 
-            void initialize();
+    void initialize();
 
-            // Allow the guest to communicate with this plugin using s2e_invoke_plugin
-            virtual void handleOpcodeInvocation(S2EExecutionState *state, uint64_t guestDataPtr, uint64_t guestDataSize);
-            void onCall(S2EExecutionState *state, const ModuleDescriptorConstPtr &source, const ModuleDescriptorConstPtr &dest,
-                        uint64_t callerPc, uint64_t calleePc, const FunctionMonitor::ReturnSignalPtr &returnSignal);
-            void onRet(S2EExecutionState *state, const ModuleDescriptorConstPtr &source, const ModuleDescriptorConstPtr &dest,
-                       uint64_t returnSite, uint64_t functionPc);
+    // Allow the guest to communicate with this plugin using s2e_invoke_plugin
+    virtual void handleOpcodeInvocation(S2EExecutionState *state, uint64_t guestDataPtr, uint64_t guestDataSize);
+    void onCall(S2EExecutionState *state, const ModuleDescriptorConstPtr &source, const ModuleDescriptorConstPtr &dest,
+                uint64_t callerPc, uint64_t calleePc, const FunctionMonitor::ReturnSignalPtr &returnSignal);
 
-        private:
-            uint64_t m_address;
-            typedef std::pair<std::string, std::vector<unsigned char>> VarValuePair;
-            typedef std::vector<VarValuePair> ConcreteInputs;
+private:
+    uint64_t m_address;
+    typedef std::pair<std::string, std::vector<unsigned char>> VarValuePair;
+    typedef std::vector<VarValuePair> ConcreteInputs;
 
-            void generateTestCases(S2EExecutionState *state);
-            void writeSimpleTestCase(llvm::raw_ostream &os, const ConcreteInputs &inputs);
-        };
+    void generateTestCases(S2EExecutionState *state);
+    void writeSimpleTestCase(llvm::raw_ostream &os, const ConcreteInputs &inputs);
+};
 
-    } // namespace plugins
+} // namespace plugins
 } // namespace s2e
 
 #endif // S2E_PLUGINS_SQLITEFUNCTIONTRACKER_H
