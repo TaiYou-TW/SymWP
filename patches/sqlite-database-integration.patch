@@ -1,0 +1,22 @@
+diff --git a/wp-includes/sqlite/class-wp-sqlite-translator.php b/wp-includes/sqlite/class-wp-sqlite-translator.php
+index c0ac1b8..3fedc09 100644
+--- a/wp-includes/sqlite/class-wp-sqlite-translator.php
++++ b/wp-includes/sqlite/class-wp-sqlite-translator.php
+@@ -671,6 +671,17 @@ class WP_SQLite_Translator {
+ 			if ( defined( 'PDO_DEBUG' ) && PDO_DEBUG === true ) {
+ 				throw $err;
+ 			}
++
++			// Force to invoke sqlite query by original query. We don't care about
++			// syntax problem, because we only want to capture symbolic variable
++			// information at S2E. Manually invoke here help we to maintain such
++			// information and make our S2E plugin works normally. We only care
++			// about parameters at interpreter-level, so ignore the possible
++			// exception here.
++			try {
++				$this->pdo->query($this->mysql_query);
++			} catch (\Throwable $th) {}
++
+ 			return $this->handle_error( $err );
+ 		}
+ 	}
