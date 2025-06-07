@@ -2,20 +2,20 @@
 
 ## Structure
 
-- `/env-builder`
+- `env-builder/`
   - docker files and configs to build environment for S2E
-- `/harnesses`
+- `harnesses/`
   - harnesses for analysis
-- `/s2e`
-  - `plugins`
+- `s2e/`
+  - `plugins/`
     - source code for S2E plugins
-  - `templates`
+  - `templates/`
     - templates for S2E env
-- `/scripts`
+- `scripts/`
   - automations scripts
-- `/sqlite-database-integration`
+- `sqlite-database-integration/`
   - submodule: `sqlite-database-integration`
-- `/patches`
+- `patches/`
   - patches for submodules
 
 ## How to build SymWP?
