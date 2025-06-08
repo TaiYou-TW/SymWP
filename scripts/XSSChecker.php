@@ -27,7 +27,7 @@ class XSSChecker
         }
     }
 
-    public function run()
+    public function run(): array
     {
         $results = [];
 

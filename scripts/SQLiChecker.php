@@ -12,7 +12,7 @@ class SQLiChecker
         $this->argvValues = $argv;
     }
 
-    public function run()
+    public function run(): array
     {
         $results = [];
 
