@@ -23,7 +23,11 @@ OUTPUT_DIR = "SymWP"
 
 XSS_PAYLOAD_MARKER = 'XSS_PAYLOAD_MARKER'
 
-def parse_args():
+def parse_args() -> None:
+    """
+    Parse command line arguments for the script.
+    Sets global variables for timeout, argv length, and core count.
+    """
     global TIMEOUT_MINUTES, ARGV_LENGTH, CORE
 
     parser = argparse.ArgumentParser(description="Run symbolic & dynamic analysis on a WordPress plugin.")
@@ -37,7 +41,11 @@ def parse_args():
     ARGV_LENGTH = args.argv_length
     CORE = args.core
 
-def is_all_dependencies_present():
+def is_all_dependencies_present() -> bool:
+    """
+    Check if all required dependencies are present.
+    Returns True if all dependencies are found, otherwise False.
+    """
     dependencies = [
         HARNESS_GEN_SCRIPT,
         XSS_CHECKER,
@@ -55,17 +63,37 @@ def is_all_dependencies_present():
     return is_all_present
 
 
-def generate_harnesses(plugin_folder):
+def generate_harnesses(plugin_folder: str) -> None:
+    """
+    Generate harnesses for the given plugin folder using the harness generator script.
+    Args:
+        plugin_folder (str): Path to the WordPress plugin folder.
+    """
     print(f"[+] Generating harnesses for: {plugin_folder}")
     subprocess.run([PHP_PATH, HARNESS_GEN_SCRIPT, plugin_folder], check=True)
 
-def get_argv_count(harness_path):
+def get_argv_count(harness_path: str) -> int:
+    """
+    Get the number of symbolic arguments expected by the harness.
+    Args:
+        harness_path (str): Path to the harness file.
+    Returns:
+        int: Number of symbolic arguments.
+    """
     with open(harness_path) as f:
         content = f.read()
     matches = re.findall(r'\$argv\[(\d+)\]', content)
     return max(map(int, matches)) + 1 if matches else 0
 
-def setup_s2e_project(plugin_name, harness_path, argv_count, project_name):
+def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, project_name: str) -> None:
+    """
+    Set up a new S2E project with the given harness and symbolic arguments.
+    Args:
+        plugin_name (str): Name of the plugin.
+        harness_path (str): Path to the harness file.
+        argv_count (int): Number of symbolic arguments.
+        project_name (str): Name of the S2E project.
+    """
     print(f"[+] Setting up S2E project for {project_name}...")
     proj_path = Path(S2E_PROJECTS_DIR) / project_name
     
@@ -125,11 +153,17 @@ def setup_s2e_project(plugin_name, harness_path, argv_count, project_name):
 
     shutil.copy("wordpress-loader.php", proj_path)
 
-'''
-Only return False if the process was interrupted by user.
-If the process was killed by timeout, we still want to analyze the output.
-'''
-def run_s2e(project_name, project_path):
+
+def run_s2e(project_name: str, project_path: str) -> bool:
+    """
+    Run the S2E analysis on the specified project.
+    Args:
+        project_name (str): Name of the S2E project.
+        project_path (Path): Path to the S2E project directory.
+    Returns:
+        bool: Only return False if the process was interrupted by user, Otherwise True.
+        Even if the process was killed by timeout, we still want to analyze the output.
+    """
     print(f"[+] Running S2E on {project_name}...")
 
     now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -155,8 +189,14 @@ def run_s2e(project_name, project_path):
     
     return True
 
-# logs may not complete, delete those not have enough args
-def remove_incomplete_args(args):
+def remove_incomplete_args(args: set) -> set:
+    """
+    Logs may not complete, delete those not have enough args.
+    Args:
+        args (set): Set of tuples containing symbolic arguments.
+    Returns:
+        set: Filtered set of tuples with only complete arguments.
+    """
     max = -1
     if (len(args) > 0):
         for arg in args:
@@ -166,7 +206,14 @@ def remove_incomplete_args(args):
     
     return args
 
-def extract_symbolic_args(project_path):
+def extract_symbolic_args(project_path: str) -> dict:
+    """
+    Extract symbolic arguments from S2E output logs.
+    Args:
+        project_path (str): Path to the S2E project directory.
+    Returns:
+        dict: Dictionary containing sets of symbolic arguments for XSS and SQLi.
+    """
     print("[+] Analyzing S2E output...")
     xss_args = set()
     sqli_args = set()
@@ -193,7 +240,15 @@ def extract_symbolic_args(project_path):
         'sqli': sqli_args,
     }
 
-def run_dynamic_checker(harness_path, symbolic_args):
+def run_dynamic_checker(harness_path: str, symbolic_args: dict) -> str:
+    """
+    Run dynamic analysis on the harness using symbolic arguments.
+    Args:
+        harness_path (str): Path to the harness file.
+        symbolic_args (dict): Dictionary containing sets of symbolic arguments for XSS and SQLi.
+    Returns:
+        str: Result of the dynamic analysis.
+    """
     print(f"[+] Running dynamic analysis on {Path(harness_path).name} with symbolic args: {symbolic_args}")
     result = ''
     if len(symbolic_args['xss']) > 0:
