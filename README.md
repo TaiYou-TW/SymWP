@@ -2,6 +2,8 @@
 
 ## Structure
 
+- `WordPress/`
+  - submodule: `WordPress`
 - `env-builder/`
   - docker files and configs to build environment for S2E
 - `harnesses/`
@@ -19,8 +21,6 @@
   - automations scripts
 - `sqlite-database-integration/`
   - submodule: `sqlite-database-integration`
-- `WordPress`
-  - submodule: `WordPress`
 
 ## How to build SymWP?
 
