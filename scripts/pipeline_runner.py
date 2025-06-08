@@ -44,7 +44,7 @@ def is_all_dependencies_present():
 
 def generate_harnesses(plugin_folder):
     print(f"[+] Generating harnesses for: {plugin_folder}")
-    subprocess.run(["php", HARNESS_GEN_SCRIPT, plugin_folder], check=True)
+    subprocess.run([PHP_PATH, HARNESS_GEN_SCRIPT, plugin_folder], check=True)
 
 def get_argv_count(harness_path):
     with open(harness_path) as f:
@@ -173,7 +173,7 @@ def run_dynamic_checker(harness_path, symbolic_args):
         for arg in symbolic_args['xss']:
             result += f"[*] Testing {arg}\n"
             try:
-                result += subprocess.run(["php", XSS_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
+                result += subprocess.run([PHP_PATH, XSS_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
             except:
                 result += "Error running XSS_CHECKER\n"
     else:
@@ -184,7 +184,7 @@ def run_dynamic_checker(harness_path, symbolic_args):
         for arg in symbolic_args['sqli']:
             result += f"[*] Testing {arg}\n"
             try:
-                result += subprocess.run(["php", SQLI_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
+                result += subprocess.run([PHP_PATH, SQLI_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
             except:
                 result += "Error running SQLiChecker\n"
     else:
