@@ -1,0 +1,13 @@
+--- "CMakeLists copy.txt"	2025-06-08 13:57:24.540529581 +0200
++++ CMakeLists.txt	2025-05-14 23:16:08.009397949 +0200
+@@ -23,6 +23,10 @@
+ add_library(
+     s2eplugins
+ 
++    s2e/Plugins/SqliteFunctionTracker.cpp
++
++    s2e/Plugins/EchoFunctionTracker.cpp
++
+     # Core plugins
+     s2e/Plugins/Core/BaseInstructions.cpp
+     s2e/Plugins/Core/HostFiles.cpp

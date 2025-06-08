@@ -59,13 +59,19 @@ cd ../
 # Copy our files to S2E folder
 cp -r WordPress/ ../s2e/
 cp harnesses/wordpress-loader.php ../s2e/
-cp "scripts/*.(php|py)" ../s2e/
+cp scripts/*.{php,py} ../s2e/
+cp s2e/templates/bootstrap_template.sh ../s2e/
+cp s2e/plugins/* ../s2e/source/s2e/libs2eplugins/src/s2e/Plugins/
 
 # Active s2e env if you haven't
 source ../s2e-env/venv/bin/activate
 
-# Download the plugin
+# Build S2E again to activate our plugins
+patch ../s2e/source/s2e/libs2eplugins/src/CMakeLists.txt < ./patches/CMakeLists.patch
 cd ../s2e/
+s2e build
+
+# Download the plugin
 wget https://downloads.wordpress.org/plugin/custom-404-pro.3.2.7.zip
 unzip custom-404-pro.3.2.7.zip
 
