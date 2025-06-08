@@ -5,3 +5,7 @@
 	path = php-src
 	url = https://github.com/php/php-src
 	branch = PHP-8.4.8
+[submodule "WordPress"]
+	path = WordPress
+	url = https://github.com/WordPress/WordPress.git
+	branch = 6.8-branch

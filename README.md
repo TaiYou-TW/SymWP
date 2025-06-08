@@ -19,6 +19,8 @@
   - automations scripts
 - `sqlite-database-integration/`
   - submodule: `sqlite-database-integration`
+- `WordPress`
+  - submodule: `WordPress`
 
 ## How to build SymWP?
 
