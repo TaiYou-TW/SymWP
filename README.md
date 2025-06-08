@@ -30,4 +30,13 @@ git clone --recursive https://github.com/TaiYou-TW/SymWP.git
 # Patch sqlite-database-integration plugin
 cd SymWP/sqlite-database-integration
 git apply ../patches/sqlite-database-integration.patch
+cd ../
+
+# Copy sqlite-database-integration plugin to WordPress
+cp -r sqlite-database-integration ./WordPress/wp-content/plugins/
+
+# Patch WordPress
+cd WordPress
+git apply ../patches/WordPress.patch
+cd ../
 ```
