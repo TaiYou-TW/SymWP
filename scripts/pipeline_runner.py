@@ -5,6 +5,8 @@ import subprocess
 import sys
 import signal
 import time
+import argparse
+
 from pathlib import Path
 from subprocess import TimeoutExpired
 
@@ -21,9 +23,19 @@ OUTPUT_DIR = "SymWP"
 
 XSS_PAYLOAD_MARKER = 'XSS_PAYLOAD_MARKER'
 
-TIMEOUT_MINUTES = 30
-ARGV_LENGTH = 20
-CORE = 16
+def parse_args():
+    global TIMEOUT_MINUTES, ARGV_LENGTH, CORE
+
+    parser = argparse.ArgumentParser(description="Run symbolic & dynamic analysis on a WordPress plugin.")
+    parser.add_argument("plugin_folder", help="Path to the WordPress plugin folder.")
+    parser.add_argument("--timeout", "-t", type=int, default=30, help="S2E timeout in minutes (default: 30).")
+    parser.add_argument("--argv-length", "-l", type=int, default=20, help="Length of symbolic argv (default: 20).")
+    parser.add_argument("--core", "-c", type=int, default=16, help="Number of cores to use for S2E (default: 16).")
+
+    args = parser.parse_args()
+    TIMEOUT_MINUTES = args.timeout
+    ARGV_LENGTH = args.argv_length
+    CORE = args.core
 
 def is_all_dependencies_present():
     dependencies = [
@@ -209,9 +221,7 @@ def run_dynamic_checker(harness_path, symbolic_args):
     return result
 
 def main():
-    if len(sys.argv) != 2:
-        print(f"Usage: python {sys.argv[0]} <plugin_folder>")
-        sys.exit(1)
+    parse_args()
 
     if not is_all_dependencies_present():
         print("[-] Some dependencies are missing. Please check the required scripts and PHP executable.")
