@@ -215,6 +215,9 @@ def main():
     if not harness_dir.exists():
         os.makedirs(harness_dir)
 
+    if not Path(OUTPUT_DIR).exists():
+        os.makedirs(OUTPUT_DIR)
+
     harnesses = list((harness_dir).rglob('*.php'))
     for harness in harnesses:
         try:
