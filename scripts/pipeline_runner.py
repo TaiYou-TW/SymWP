@@ -186,8 +186,7 @@ def main():
     generate_harnesses(plugin_folder)
 
     if not harness_dir.exists():
-        print(f"[-] Harness folder not found: {harness_dir}")
-        sys.exit(1)
+        os.makedirs(harness_dir)
 
     harnesses = list((harness_dir).rglob('*.php'))
     for harness in harnesses:
