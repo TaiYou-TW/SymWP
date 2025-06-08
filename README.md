@@ -6,6 +6,10 @@
   - docker files and configs to build environment for S2E
 - `harnesses/`
   - harnesses for analysis
+- `patches/`
+  - patches for submodules
+- `php-src/`
+  - submodule: `php-src`
 - `s2e/`
   - `plugins/`
     - source code for S2E plugins
@@ -15,8 +19,6 @@
   - automations scripts
 - `sqlite-database-integration/`
   - submodule: `sqlite-database-integration`
-- `patches/`
-  - patches for submodules
 
 ## How to build SymWP?
 
