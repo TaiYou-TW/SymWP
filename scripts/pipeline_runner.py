@@ -24,6 +24,24 @@ TIMEOUT_MINUTES = 30
 ARGV_LENGTH = 20
 CORE = 16
 
+def is_all_dependencies_present():
+    dependencies = [
+        HARNESS_GEN_SCRIPT,
+        XSS_CHECKER,
+        SQLI_CHECKER,
+        S2E_BOOTSTRAP_TEMPLATE_PATH,
+        PHP_PATH,
+    ]
+
+    is_all_present = True
+    for dep in dependencies:
+        if not Path(dep).exists():
+            print(f"[-] Missing dependency: {dep}")
+            is_all_present = False
+
+    return is_all_present
+
+
 def generate_harnesses(plugin_folder):
     print(f"[+] Generating harnesses for: {plugin_folder}")
     subprocess.run(["php", HARNESS_GEN_SCRIPT, plugin_folder], check=True)
@@ -179,9 +197,18 @@ def main():
         print(f"Usage: python {sys.argv[0]} <plugin_folder>")
         sys.exit(1)
 
+    if not is_all_dependencies_present():
+        print("[-] Some dependencies are missing. Please check the required scripts and PHP executable.")
+        sys.exit(1)
+
     plugin_folder = sys.argv[1]
-    plugin_name = Path(plugin_folder).name
-    harness_dir = Path(plugin_folder) / HARNESS_DIR
+    plugin_folder_path = Path(plugin_folder)
+    plugin_name = plugin_folder_path.name
+    harness_dir = plugin_folder_path / HARNESS_DIR
+
+    if not plugin_folder_path.exists():
+        print(f"[-] Plugin folder {plugin_folder} does not exist.")
+        sys.exit(1)
 
     generate_harnesses(plugin_folder)
 
