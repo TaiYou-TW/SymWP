@@ -63,11 +63,13 @@ public:
 
 private:
     uint64_t m_address;
-    std::unordered_map<std::string, uint64_t> symbolic_args;
-    std::unordered_map<std::string, uint64_t> exploitable_args;
+    typedef std::pair<std::string, std::vector<unsigned char>> VarValuePair;
+    typedef std::vector<VarValuePair> ConcreteInputs;
 
     void printExploitableSymbolicArgs(S2EExecutionState *state, uint64_t address, uint64_t size);
     void addConstraintToSymbolicString(S2EExecutionState *state, uint64_t address, uint64_t size);
+    void generateTestCases(S2EExecutionState *state, std::set<std::string> foundNames);
+    void writeSimpleTestCase(llvm::raw_ostream &os, const ConcreteInputs &inputs, std::set<std::string> foundNames);
 };
 
 } // namespace plugins

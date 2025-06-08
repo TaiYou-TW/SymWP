@@ -122,7 +122,6 @@ void EchoFunctionTracker::onSymbolicVariableCreation(S2EExecutionState *state, c
     state->regs()->read(CPU_OFFSET(regs[R_EAX]), &address, sizeof(address), false);
     getDebugStream(state) << "Symbolic variable created: " << arrayName << "\n";
     getDebugStream(state) << "  Address: " << hexval(address) << "\n";
-    symbolic_args[arrayName] = address;
 
     // byte is printable OR zero
     for (uint64_t i = 0; i < array->getSize(); ++i) {
@@ -187,15 +186,10 @@ void EchoFunctionTracker::printExploitableSymbolicArgs(S2EExecutionState *state,
         }
     }
 
-    for (const auto &name : foundNames) {
-        if (symbolic_args.find(name) != symbolic_args.end()) {
-            exploitable_args[name] = symbolic_args[name];
-            getInfoStream(state) << "exploitable_args[" << hexval(address) << "] = " << name << "\n";
-        }
-    }
+    generateTestCases(state, foundNames);
 }
 
-// TODO: buggy function, will crash the engine with unknown reason
+// FIXME: buggy function, will crash the engine with unknown reason
 void EchoFunctionTracker::addConstraintToSymbolicString(S2EExecutionState *state, uint64_t address, uint64_t size) {
     bool foundNull = false;
     for (uint64_t i = 0; i < size; ++i) {
@@ -236,6 +230,77 @@ void EchoFunctionTracker::addConstraintToSymbolicString(S2EExecutionState *state
             }
         }
     }
+}
+
+void EchoFunctionTracker::generateTestCases(S2EExecutionState *state, std::set<std::string> foundNames) {
+    ConcreteInputs inputs;
+    bool success = state->getSymbolicSolution(inputs);
+
+    if (!success) {
+        getWarningsStream(state) << "Could not get symbolic solutions" << '\n';
+        return;
+    }
+
+    writeSimpleTestCase(getDebugStream(state), inputs, foundNames);
+}
+
+void EchoFunctionTracker::writeSimpleTestCase(llvm::raw_ostream &os, const ConcreteInputs &inputs,
+                                              std::set<std::string> foundNames) {
+    std::stringstream ss;
+    ConcreteInputs::const_iterator it;
+    ss << "Test case: ";
+    for (it = inputs.begin(); it != inputs.end(); ++it) {
+        const VarValuePair &vp = *it;
+
+        bool found = false;
+        for (const auto &argName : foundNames) {
+            if (vp.first.compare(argName) == 0) {
+                found = true;
+                break;
+            }
+        }
+
+        ss << std::setw(20) << vp.first;
+        if (found) {
+            ss << "(exploitable)";
+        }
+        ss << " = {";
+
+        for (unsigned i = 0; i < vp.second.size(); ++i) {
+            if (i != 0)
+                ss << ", ";
+            ss << std::setw(2) << std::setfill('0') << "0x" << std::hex << (unsigned) vp.second[i] << std::dec;
+        }
+        ss << "}" << std::setfill(' ') << "; ";
+
+        if (vp.second.size() == sizeof(int32_t)) {
+            int32_t valueAsInt = vp.second[0] | ((int32_t) vp.second[1] << 8) | ((int32_t) vp.second[2] << 16) |
+                                 ((int32_t) vp.second[3] << 24);
+            ss << "(int32_t) " << valueAsInt << ", ";
+        }
+        if (vp.second.size() == sizeof(int64_t)) {
+            int64_t valueAsInt = vp.second[0] | ((int64_t) vp.second[1] << 8) | ((int64_t) vp.second[2] << 16) |
+                                 ((int64_t) vp.second[3] << 24) | ((int64_t) vp.second[4] << 32) |
+                                 ((int64_t) vp.second[5] << 40) | ((int64_t) vp.second[6] << 48) |
+                                 ((int64_t) vp.second[7] << 56);
+            ss << "(int64_t) " << valueAsInt << ", ";
+        }
+
+        ss << "(string) \"";
+        for (unsigned i = 0; i < vp.second.size(); ++i) {
+            if (std::isprint(vp.second[i])) {
+                ss << (char) vp.second[i];
+            } else if (vp.second[i] == 0) {
+                break;
+            } else {
+                ss << ".";
+            }
+        }
+        ss << "\"";
+    }
+    ss << "\n";
+
+    os << ss.str();
 }
 
 } // namespace plugins

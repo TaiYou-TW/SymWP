@@ -9,26 +9,41 @@ class XSSChecker
     ];
     private const TAINT_START_MARKER = '__TAINTED_VAR_S__';
     private const TAINT_END_MARKER = '__TAINTED_VAR_E__';
+    private const XSS_PAYLOAD_MARKER = 'XSS_PAYLOAD_MARKER';
+    private const PAYLOAD = self::TAINT_START_MARKER . "'\"<>/;=#`\\<h1>a</h1><script>alert(1)</script><img src=x onerror=alert(1)>" . self::TAINT_END_MARKER;
 
     private string $harnessPath;
     private array $argvValues;
 
-    public function __construct($harnessPath)
+    public function __construct(string $harnessPath, array $argv)
     {
         $this->harnessPath = $harnessPath;
+        $this->argvValues = $argv;
 
-        $taintedPayload = self::TAINT_START_MARKER . "'\"<>/;=#`\\<h1>a</h1><script>alert(1)</script><img src=x onerror=alert(1)>" . self::TAINT_END_MARKER;
-        $this->argvValues = array_fill(0, self::ARGV_COUNT, $taintedPayload);
+        for ($i = 0; $i < count($this->argvValues); $i++) {
+            if ($this->argvValues[$i] === self::XSS_PAYLOAD_MARKER) {
+                $this->argvValues[$i] = self::PAYLOAD;
+            }
+        }
     }
 
     public function run()
     {
-        $output = $this->run_harness();
+        $results = [];
 
-        file_put_contents('.XSSChecker_output.html', $output);
-        echo "== Output Analysis for: $this->harnessPath ==\n";
+        for ($i = 0; $i < count($this->argvValues); $i++) {
+            $output = $this->run_harness();
+            if (is_null($output)) {
+                continue;
+            }
 
-        return $this->detect_taint_exposure($output);
+            file_put_contents('.XSSChecker_output.html', $output);
+            echo "== Output Analysis for: $this->harnessPath ==\n";
+
+            $results = array_merge($results, $this->detect_taint_exposure($output));
+        }
+
+        return $results;
     }
 
     private function run_harness(): string|bool|null
@@ -79,10 +94,10 @@ class XSSChecker
 }
 
 if ($argv && $argv[0] && realpath($argv[0]) === __FILE__) {
-    if (count($argv) < 2) {
-        die("Usage: php {$argv[0]} <harness_file>\n");
+    if (count($argv) < 3) {
+        die("Usage: php {$argv[0]} <harness_file> ...<argvs>\n");
     }
-    $checker = new XSSChecker($argv[1]);
+    $checker = new XSSChecker($argv[1], array_slice($argv, 2));
     $issues = $checker->run();
 
     if (empty($issues)) {

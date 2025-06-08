@@ -18,6 +18,8 @@ S2E_PROJECTS_DIR = "projects"
 HARNESS_DIR = ".harness"
 OUTPUT_DIR = "SymWP"
 
+XSS_PAYLOAD_MARKER = 'XSS_PAYLOAD_MARKER'
+
 TIMEOUT_MINUTES = 30
 ARGV_LENGTH = 20
 CORE = 16
@@ -106,30 +108,41 @@ def run_s2e(project_name, project_path):
     except TimeoutExpired:
         pass
 
+# logs may not complete, delete those not have enough args
+def remove_incomplete_args(args):
+    max = -1
+    if (len(args) > 0):
+        for arg in args:
+            if len(arg) > max:
+                max = len(arg)
+        args = [arg for arg in args if len(arg) == max]
+    
+    return args
+
 def extract_symbolic_args(project_path):
     print("[+] Analyzing S2E output...")
     xss_args = set()
-    sqli_args = []
+    sqli_args = set()
     for log_file in Path(project_path).rglob("stdout.txt"):
         with open(log_file, "r", errors='ignore') as f:
             for line in f:
-                xss_match = re.search(r'exploitable_args\[0x[\da-f]+\] = v\d+_arg(\d+)_\d+', line) # exploitable_args[0x7fa37c244838] = v0_arg2_0
-                if xss_match:
-                    xss_args.add(int(xss_match.group(1)))
+                xss_matches = re.findall(r'v\d+_arg\d+_\d+(?:\(exploitable\))? = {[^}]*}; \(string\) "([^)]*)"', line)
+                if xss_matches and 'EchoFunctionTracker: Test case:' in line:
+                    exploitable_indexes = re.findall(r'v(\d+)_arg\d+_\d+(?:\(exploitable\))', line)
+                    for index in exploitable_indexes:
+                        if int(index) < len(xss_matches):
+                            xss_matches[int(index)] = XSS_PAYLOAD_MARKER
+                    xss_args.add(tuple(xss_matches))
+
                 sqli_matches = re.findall(r'v\d+_arg\d+_\d+ = {[^}]*}; \(string\) "([^)]*)"', line)
                 if sqli_matches and 'SqliteFunctionTracker: Test case:' in line:
-                    sqli_args += [sqli_matches]
+                    sqli_args.add(tuple(sqli_matches))
 
-    # logs may not complete, delete those not have enough args
-    if (len(sqli_args) > 0):
-        max = len(sqli_args[0])
-        for arg in sqli_args:
-            if len(arg) > max:
-                max = len(arg)
-        sqli_args = [arg for arg in sqli_args if len(arg) == max]
-
+    xss_args = remove_incomplete_args(xss_args)
+    sqli_args = remove_incomplete_args(sqli_args)
+    
     return {
-        'xss': sorted(xss_args),
+        'xss': xss_args,
         'sqli': sqli_args,
     }
 
@@ -139,10 +152,12 @@ def run_dynamic_checker(harness_path, symbolic_args):
     result = ''
     if len(symbolic_args['xss']) > 0:
         result = '[+] XSSChecker:\n'
-        try:
-            result += subprocess.run(["php", XSS_CHECKER, harness_path], capture_output=True, text=True, check=True).stdout
-        except e:
-            result += "Error running XSSChecker\n"
+        for arg in symbolic_args['xss']:
+            result += f"[*] Testing {arg}\n"
+            try:
+                result += subprocess.run(["php", XSS_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
+            except:
+                result += "Error running XSS_CHECKER\n"
     else:
         result += "[-] No XSS arguments found.\n"
 
