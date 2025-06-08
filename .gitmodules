@@ -1,3 +1,7 @@
 [submodule "sqlite-database-integration"]
 	path = sqlite-database-integration
 	url = https://github.com/WordPress/sqlite-database-integration
+[submodule "php-src"]
+	path = php-src
+	url = https://github.com/php/php-src
+	branch = PHP-8.4.8
