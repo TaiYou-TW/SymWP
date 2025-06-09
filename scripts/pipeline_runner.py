@@ -8,7 +8,7 @@ import time
 import argparse
 
 from pathlib import Path
-from subprocess import TimeoutExpired
+from subprocess import TimeoutExpired, CalledProcessError
 
 HARNESS_GEN_SCRIPT = "harness_generator.php"
 XSS_CHECKER = "XSSChecker.php"
@@ -16,6 +16,7 @@ SQLI_CHECKER = "SQLiChecker.php"
 
 S2E_BOOTSTRAP_TEMPLATE_PATH = "bootstrap_template.sh"
 PHP_PATH = "../php-src/sapi/cli/php"
+S2E_COMMAND = "s2e"
 
 S2E_PROJECTS_DIR = "projects"
 HARNESS_DIR = ".harness"
@@ -60,6 +61,17 @@ def is_all_dependencies_present() -> bool:
             print(f"[-] Missing dependency: {dep}")
             is_all_present = False
 
+    try:
+        subprocess.run(
+            [S2E_COMMAND],
+            check=True,
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        print(f"[-] S2E command is not available or not working properly. Please activate S2E environment or check your installation.")
+        is_all_present = False
+
     return is_all_present
 
 
@@ -100,7 +112,7 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
     # Run S2E command to new project
     print(f"[+] Generating new project...")
     subprocess.run(
-        ["s2e", "new_project","-f", "-n", project_name, PHP_PATH, harness_path],
+        [S2E_COMMAND, "new_project","-f", "-n", project_name, PHP_PATH, harness_path],
         check=True,
         stdout=subprocess.DEVNULL, 
         stderr=subprocess.DEVNULL,
@@ -129,6 +141,7 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
     with open(bootstrap_path, "w") as f:
         f.writelines(new_lines)
 
+    # TODO: don't write fixed addresses, but get them from actual php binary
     # enable plugins in s2e-config.lua
     s2e_config_path = proj_path / "s2e-config.lua"
     with open(s2e_config_path, 'a') as f:
@@ -173,7 +186,7 @@ def run_s2e(project_name: str, project_path: str) -> bool:
     try:
         with open(str(project_path) + '/stdout.txt', 'w') as f:
             proc = subprocess.Popen(
-                ["s2e", "run", '-n', '-t', str(TIMEOUT_MINUTES), '-c', str(CORE), project_name],
+                [S2E_COMMAND, "run", '-n', '-t', str(TIMEOUT_MINUTES), '-c', str(CORE), project_name],
                 stdout=f, 
                 stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid  # Ensure we can kill the process group
