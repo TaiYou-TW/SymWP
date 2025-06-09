@@ -250,25 +250,32 @@ function extract_user_input_vars_from_wp_rest_request(string $body): array
         }
     }
 
-    // Step 2: Track accesses to those vars: $params['page']
+    // Step 2: Track accesses to those vars
     for ($i = 0; $i < $count - 3; $i++) {
         if (
             is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE &&
-            in_array($tokens[$i][1], array_column($paramVars, 'var')) &&
-            $tokens[$i + 1] === '[' &&
-            is_array($tokens[$i + 2]) && $tokens[$i + 2][0] === T_CONSTANT_ENCAPSED_STRING
+            in_array($tokens[$i][1], array_column($paramVars, 'var'))
         ) {
-            $paramVar = array_filter($paramVars, fn($var) => $var['var'] === $tokens[$i][1]);
-            if (empty($paramVar)) {
-                echo "Error: Unknown variable {$tokens[$i][1]}.\n";
+            // $params['page']
+            if (
+                $tokens[$i + 1] === '[' &&
+                is_array($tokens[$i + 2]) && $tokens[$i + 2][0] === T_CONSTANT_ENCAPSED_STRING
+            ) {
+                $paramVar = array_filter($paramVars, fn($var) => $var['var'] === $tokens[$i][1]);
+                if (empty($paramVar)) {
+                    echo "Error: Unknown variable {$tokens[$i][1]}.\n";
+                    continue;
+                }
+                $paramVar = array_values($paramVar)[0];
+                $super = $paramVar['method'];
+                $key = trim($tokens[$i + 2][1], "'\"");
+                if (!isset($inputs[$super]) || !in_array($key, $inputs[$super])) {
+                    $inputs[$super][] = $key;
+                }
                 continue;
             }
-            $paramVar = array_values($paramVar)[0];
-            $super = $paramVar['method'];
-            $key = trim($tokens[$i + 2][1], "'\"");
-            if (!isset($inputs[$super]) || !in_array($key, $inputs[$super])) {
-                $inputs[$super][] = $key;
-            }
+            // $params
+            // TODO: How to generate suitable array for $params?
         }
     }
 
