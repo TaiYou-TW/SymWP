@@ -102,8 +102,13 @@ function extract_functions_and_methods(string $content): array
                     break;
                 }
                 if ($start && is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE) {
+                    $type = null;
+                    // Parameters may not have type hints, so we also check the previous tokens
+                    if (($tokens[$i - 2][0] ?? null) === T_STRING && ($tokens[$i - 1][0] ?? null) === T_WHITESPACE) {
+                        $type = $tokens[$i - 2];
+                    }
                     $params[] = [
-                        'type' => ($tokens[$i - 2][0] ?? null) === T_STRING ? $tokens[$i - 2][1] : ($tokens[$i - 2][0] ?? null),
+                        'type' => $type,
                         'name' => substr($tokens[$i][1], 1),
                         'default' => $tokens[$i + 2] ?? null,
                     ];
@@ -369,12 +374,13 @@ function append_user_input_vars_to_harness(string &$harness, array $inputs, stri
     return $argIndex;
 }
 
-function append_function_params_to_harness(string &$harness, array $parms, int $startIndex = 1): string
+function append_function_params_to_harness(string &$harness, array $params, int $startIndex = 1): string
 {
     $argIndex = $startIndex;
     $argsList = [];
-    foreach ($parms as $parm) {
-        if ($parm['type'] === WP_REST_REQUEST && $parm['name'] === 'request') {
+    foreach ($params as $param) {
+        // function parameter may have no type, so we also assume it's WP_REST_REQUEST by variable name
+        if ($param['type'] === WP_REST_REQUEST || $param['name'] === 'request') {
             $argsList[] = "\$request";
         } else {
             $argsList[] = "\$argv[{$argIndex}]";
