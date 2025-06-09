@@ -1,5 +1,11 @@
 <?php
 
+// stub function to force WP bypass nonce verification
+function wp_verify_nonce($nonce, $action = -1)
+{
+    return 1;
+}
+
 function my_wp_initial_constants()
 {
     global $blog_id;
