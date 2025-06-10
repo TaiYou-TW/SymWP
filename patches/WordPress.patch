@@ -62,3 +62,57 @@ index 0000000000..8098000615
 +		}
 +	}
 +);
+
+diff --git a/wp-includes/capabilities.php b/wp-includes/capabilities.php
+index d6c340c95e..d282285b23 100644
+--- a/wp-includes/capabilities.php
++++ b/wp-includes/capabilities.php
+@@ -907,8 +907,10 @@ function map_meta_cap( $cap, $user_id, ...$args ) {
+  * @return bool Whether the current user has the given capability. If `$capability` is a meta cap and `$object_id` is
+  *              passed, whether the current user has the given meta capability for the given object.
+  */
+-function current_user_can( $capability, ...$args ) {
+-	return user_can( wp_get_current_user(), $capability, ...$args );
++if (!function_exists('current_user_can')) {
++	function current_user_can( $capability, ...$args ) {
++		return user_can( wp_get_current_user(), $capability, ...$args );
++	}
+ }
+ 
+ /**
+diff --git a/wp-includes/formatting.php b/wp-includes/formatting.php
+index 8c77d167a4..ec73f88ec5 100644
+--- a/wp-includes/formatting.php
++++ b/wp-includes/formatting.php
+@@ -5561,18 +5561,20 @@ function wp_strip_all_tags( $text, $remove_breaks = false ) {
+  * @param string $str String to sanitize.
+  * @return string Sanitized string.
+  */
+-function sanitize_text_field( $str ) {
+-	$filtered = _sanitize_text_fields( $str, false );
++if (!function_exists('sanitize_text_field')) {
++	function sanitize_text_field( $str ) {
++		$filtered = _sanitize_text_fields( $str, false );
+ 
+-	/**
+-	 * Filters a sanitized text field string.
+-	 *
+-	 * @since 2.9.0
+-	 *
+-	 * @param string $filtered The sanitized string.
+-	 * @param string $str      The string prior to being sanitized.
+-	 */
+-	return apply_filters( 'sanitize_text_field', $filtered, $str );
++		/**
++		 * Filters a sanitized text field string.
++		 *
++		 * @since 2.9.0
++		 *
++		 * @param string $filtered The sanitized string.
++		 * @param string $str      The string prior to being sanitized.
++		 */
++		return apply_filters( 'sanitize_text_field', $filtered, $str );
++	}
+ }
+ 
+ /**

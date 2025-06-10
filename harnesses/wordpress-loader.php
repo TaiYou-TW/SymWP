@@ -1,9 +1,21 @@
 <?php
 
-// stub function to force WP bypass nonce verification
+/**
+ * Stub functions to simplify emulation
+ */
 function wp_verify_nonce($nonce, $action = -1)
 {
-    return 1;
+	return 1;
+}
+
+function sanitize_text_field($str)
+{
+	return $str;
+}
+
+function current_user_can($capability)
+{
+	return true;
 }
 
 function my_wp_initial_constants()
@@ -437,6 +449,3 @@ require ABSPATH . WPINC . '/pluggable.php';
 require ABSPATH . WPINC . '/pluggable-deprecated.php';
 
 require_once ABSPATH . '/wp-admin/includes/admin.php';
-
-// Use admin as current user to avoid permission problem
-wp_set_current_user(1);
