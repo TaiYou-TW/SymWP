@@ -285,9 +285,10 @@ function extract_user_input_vars_from_wp_rest_request(string $body): array
 function common_harness_header(): string
 {
     global $plugin_entry_file;
+    $timestamp = date("Y-m-d H:i:s");
     $output = <<<EOT
 <?php
-// This harness file is auto-generated. Do not edit.
+// This harness file is auto-generated at $timestamp. Do not edit.
 require 'wordpress-loader.php';
 require_once '$plugin_entry_file';
 do_action('plugins_loaded');
