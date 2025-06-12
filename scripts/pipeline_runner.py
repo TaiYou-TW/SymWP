@@ -26,6 +26,8 @@ OUTPUT_DIR = "SymWP"
 
 XSS_PAYLOAD_MARKER = 'XSS_PAYLOAD_MARKER'
 
+FATAL_ERROR_THRESHOLD = 100
+
 def parse_args() -> None:
     """
     Parse command line arguments for the script.
@@ -232,19 +234,27 @@ def extract_symbolic_args(project_path: str) -> dict | None:
     xss_args = set()
     sqli_args = set()
     in_error = False
+    error_counter = 0
 
     for log_file in Path(project_path).rglob("stdout.txt"):
         with open(log_file, "r", errors='ignore') as f:
             for line in f:
                 if "Fatal error" in line:
                     print('[!] Fatal error happened! Message:\n')
+                    error_counter += 1
                     in_error = True
+
+                    '''
+                    There may have some fatal erro during symbolic execution.
+                    The "possible" resason is that concurrent execution of S2E
+                    may cause I/O errors. So, we only stop the analysis if the
+                    number of fatal errors exceeds a threshold.
+                    '''
+                    if error_counter >= FATAL_ERROR_THRESHOLD:
+                        print("[-] Too many fatal errors, stopping analysis.")
+                        return None
+
                     continue
-                normal_log_match = re.findall(r'\d+ \[Node \d+/\d+ - State \d+\]', line)
-                if in_error and normal_log_match:
-                    return None
-                if in_error:
-                    print(line)
 
                 xss_matches = re.findall(r'v\d+_arg\d+_\d+(?:\(exploitable\))? = {[^}]*}; \(string\) "([^)]*)"', line)
                 if xss_matches and 'EchoFunctionTracker: Test case:' in line:
@@ -253,6 +263,7 @@ def extract_symbolic_args(project_path: str) -> dict | None:
                         if int(index) < len(xss_matches):
                             xss_matches[int(index)] = XSS_PAYLOAD_MARKER
                     xss_args.add(tuple(xss_matches))
+                    continue
 
                 sqli_matches = re.findall(r'v\d+_arg\d+_\d+ = {[^}]*}; \(string\) "([^)]*)"', line)
                 if sqli_matches and 'SqliteFunctionTracker: Test case:' in line:
