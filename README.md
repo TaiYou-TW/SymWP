@@ -76,5 +76,5 @@ wget https://downloads.wordpress.org/plugin/custom-404-pro.3.2.7.zip
 unzip custom-404-pro.3.2.7.zip
 
 # Start testing!
-python3 pipeline_runner.py custom-404-pro # `-h` to see help
+./pipeline_runner.py custom-404-pro # `-h` to see help
 ```
