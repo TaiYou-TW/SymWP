@@ -216,7 +216,7 @@ def remove_incomplete_args(args: set) -> set:
     
     return args
 
-def extract_symbolic_args(project_path: str) -> dict:
+def extract_symbolic_args(project_path: str) -> dict | None:
     """
     Extract symbolic arguments from S2E output logs.
     Args:
@@ -225,11 +225,24 @@ def extract_symbolic_args(project_path: str) -> dict:
         dict: Dictionary containing sets of symbolic arguments for XSS and SQLi.
     """
     print("[+] Analyzing S2E output...")
+    
     xss_args = set()
     sqli_args = set()
+    in_error = False
+
     for log_file in Path(project_path).rglob("stdout.txt"):
         with open(log_file, "r", errors='ignore') as f:
             for line in f:
+                if "Fatal error" in line:
+                    print('[!] Fatal error happened! Message:\n')
+                    in_error = True
+                    continue
+                normal_log_match = re.findall(r'\d+ \[Node \d+/\d+ - State \d+\]', line)
+                if in_error and normal_log_match:
+                    return None
+                if in_error:
+                    print(line)
+
                 xss_matches = re.findall(r'v\d+_arg\d+_\d+(?:\(exploitable\))? = {[^}]*}; \(string\) "([^)]*)"', line)
                 if xss_matches and 'EchoFunctionTracker: Test case:' in line:
                     exploitable_indexes = re.findall(r'v(\d+)_arg\d+_\d+(?:\(exploitable\))', line)
@@ -261,7 +274,7 @@ def run_dynamic_checker(harness_path: str, symbolic_args: dict) -> str:
     """
     print(f"[+] Running dynamic analysis on {Path(harness_path).name} with symbolic args: {symbolic_args}")
     result = ''
-    if len(symbolic_args['xss']) > 0:
+    if 'xss' in symbolic_args and len(symbolic_args['xss']) > 0:
         result = '[+] XSSChecker:\n'
         for arg in symbolic_args['xss']:
             result += f"[*] Testing {arg}\n"
@@ -272,7 +285,7 @@ def run_dynamic_checker(harness_path: str, symbolic_args: dict) -> str:
     else:
         result += "[-] No XSS arguments found.\n"
 
-    if len(symbolic_args['sqli']) > 0:
+    if 'sqli' in symbolic_args and len(symbolic_args['sqli']) > 0:
         result += '[+] SQLiChecker:\n'
         for arg in symbolic_args['sqli']:
             result += f"[*] Testing {arg}\n"
@@ -333,9 +346,8 @@ def main():
         run_s2e(project_name, project_path)
 
         symbolic_args = extract_symbolic_args(project_path)
-        if not symbolic_args:
-            print("[-] No symbolic arguments detected.")
-            continue
+        if symbolic_args is None:
+            break
 
         result = run_dynamic_checker(harness_path, symbolic_args)
         with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.args", 'w') as f:
