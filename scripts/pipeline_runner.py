@@ -29,18 +29,21 @@ def parse_args() -> None:
     Parse command line arguments for the script.
     Sets global variables for timeout, argv length, and core count.
     """
-    global TIMEOUT_MINUTES, ARGV_LENGTH, CORE
+    global TIMEOUT_MINUTES, ARGV_LENGTH, CORE, INCLUDE
 
     parser = argparse.ArgumentParser(description="Run symbolic & dynamic analysis on a WordPress plugin.")
     parser.add_argument("plugin_folder", help="Path to the WordPress plugin folder.")
     parser.add_argument("--timeout", "-t", type=int, default=30, help="S2E timeout in minutes (default: 30).")
     parser.add_argument("--argv-length", "-l", type=int, default=20, help="Length of symbolic argv (default: 20).")
     parser.add_argument("--core", "-c", type=int, default=16, help="Number of cores to use for S2E (default: 16).")
+    parser.add_argument("--include", "-i", type=str, default='', help="Include only specific targets, it can be filename, full path of file or method name.")
 
     args = parser.parse_args()
     TIMEOUT_MINUTES = args.timeout
     ARGV_LENGTH = args.argv_length
     CORE = args.core
+    INCLUDE = args.include.replace('/', '-').replace('.', '-')
+
 
 def is_all_dependencies_present() -> bool:
     """
@@ -289,6 +292,8 @@ def run_dynamic_checker(harness_path: str, symbolic_args: dict) -> str:
     return result
 
 def main():
+    global INCLUDE
+
     parse_args()
 
     if not is_all_dependencies_present():
@@ -313,10 +318,21 @@ def main():
         os.makedirs(OUTPUT_DIR)
 
     harnesses = list((harness_dir).rglob('*.php'))
+    print(f"[+] {len(harnesses)} harnesses generated in {harness_dir}")
+
     for harness in harnesses:
         harness_path = str(harness)
         project_name = f"{plugin_name}_{harness.stem}"
         argv_count = get_argv_count(harness_path)
+
+        if INCLUDE and INCLUDE not in harness_path:
+            print(f"[-] Skipping {harness_path} as it does not match the include \"{INCLUDE}\".")
+            continue
+    
+        if argv_count == 0:
+            print(f"[-] No symbolic arguments found in {harness_path}. Skipping.")
+            continue
+        print(f"[+] Harness: {harness_path}, Symbolic argv count: {argv_count}")
 
         setup_s2e_project(plugin_name, harness_path, argv_count, project_name)
         project_path = Path(S2E_PROJECTS_DIR) / project_name
