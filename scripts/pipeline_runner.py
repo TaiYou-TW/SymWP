@@ -170,15 +170,12 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
     shutil.copy("wordpress-loader.php", proj_path)
 
 
-def run_s2e(project_name: str, project_path: str) -> bool:
+def run_s2e(project_name: str, project_path: str) -> None:
     """
     Run the S2E analysis on the specified project.
     Args:
         project_name (str): Name of the S2E project.
         project_path (Path): Path to the S2E project directory.
-    Returns:
-        bool: Only return False if the process was interrupted by user, Otherwise True.
-        Even if the process was killed by timeout, we still want to analyze the output.
     """
     print(f"[+] Running S2E on {project_name}...")
 
@@ -201,9 +198,6 @@ def run_s2e(project_name: str, project_path: str) -> bool:
     except KeyboardInterrupt:
         print("[-] User interrupted the process.")
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        return False
-    
-    return True
 
 def remove_incomplete_args(args: set) -> set:
     """
@@ -336,8 +330,7 @@ def main():
 
         setup_s2e_project(plugin_name, harness_path, argv_count, project_name)
         project_path = Path(S2E_PROJECTS_DIR) / project_name
-        if not run_s2e(project_name, project_path):
-            continue
+        run_s2e(project_name, project_path)
 
         symbolic_args = extract_symbolic_args(project_path)
         if not symbolic_args:
