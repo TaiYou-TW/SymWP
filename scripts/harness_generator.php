@@ -14,6 +14,10 @@ const WP_REST_REQUEST_SET_PARAMS_METHODS = [
     WP_REST_REQUEST_SET_BODY_PARAMS,
     WP_REST_REQUEST_SET_BODY,
 ];
+const SKIP_FUNCTION_CALLS = [
+    'defined',
+    'class_exists',
+];
 
 const PLUGIN_FOLDER_PREFIX = 'wp-content/plugins/';
 
@@ -471,7 +475,7 @@ function is_inline_php_file(string $code): bool
 
             // function calls in global scope
             if ($depth === 0 && $token[0] === T_STRING && isset($tokens[$i + 1]) && $tokens[$i + 1] === '(') {
-                if ($token[1] != 'defined') { // Skip defined() function commonly used in plugin headers
+                if (!in_array($token[1], SKIP_FUNCTION_CALLS)) {
                     return true;
                 }
             }
