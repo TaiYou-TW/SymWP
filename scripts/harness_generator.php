@@ -18,8 +18,13 @@ const SKIP_FUNCTION_CALLS = [
     'defined',
     'class_exists',
 ];
-
 const PLUGIN_FOLDER_PREFIX = 'wp-content/plugins/';
+
+enum HarnessType
+{
+    case concrete;
+    case symbolic;
+}
 
 function extract_php_files(string $dir): array
 {
@@ -286,14 +291,23 @@ function extract_user_input_vars_from_wp_rest_request(string $body): array
     return $inputs;
 }
 
-function common_harness_header(): string
+function common_harness_header(HarnessType $type): string
 {
     global $plugin_entry_file;
+
+    if ($type === HarnessType::symbolic) {
+        $wordpress_loader = 'symbolic-wordpress-loader.php';
+    } elseif ($type === HarnessType::concrete) {
+        $wordpress_loader = 'concrete-wordpress-loader.php';
+    } else {
+        throw new InvalidArgumentException("Invalid harness type: " . $type->name);
+    }
+
     $timestamp = date("Y-m-d H:i:s");
     $output = <<<EOT
 <?php
 // This harness file is auto-generated at $timestamp. Do not edit.
-require 'wordpress-loader.php';
+require '$wordpress_loader';
 require_once '$plugin_entry_file';
 do_action('plugins_loaded');
 
@@ -407,54 +421,62 @@ function generate_function_harness(string $filepath, array $function, array $inp
 {
     $basename = get_dash_file_path($filepath);
     $funcname = $function['name'];
-    $harnessName = "{$basename}_{$funcname}_func_harness.php";
-    $outputPath = get_output_path($outputDir, $harnessName);
 
-    $harness = common_harness_header();
-    $harness .= "require_once '$filepath';\n";
+    foreach (HarnessType::cases() as $type) {
+        $harnessName = "{$basename}_{$funcname}_func_harness.php";
+        $dir = $outputDir . DIRECTORY_SEPARATOR . $type->name;
+        $outputPath = get_output_path($dir, $harnessName);
 
-    $argIndex = append_user_input_vars_to_harness($harness, $inputs, $filepath);
-    $args = append_function_params_to_harness($harness, $function['params'], $argIndex);
-    $harness .= "{$funcname}({$args});\n";
+        $harness = common_harness_header($type);
+        $harness .= "require_once '$filepath';\n";
 
-    file_put_contents($outputPath, $harness);
-    echo "Generated function harness: $outputPath\n";
+        $argIndex = append_user_input_vars_to_harness($harness, $inputs, $filepath);
+        $args = append_function_params_to_harness($harness, $function['params'], $argIndex);
+        $harness .= "{$funcname}({$args});\n";
+
+        file_put_contents($outputPath, $harness);
+        echo "Generated function harness: $outputPath\n";
+    }
 }
 
 function generate_method_harness(string $filepath, array $method, array $inputs, string $outputDir): void
 {
     $basename = get_dash_file_path($filepath);
-    $harnessName = "{$basename}_{$method['class']}_{$method['method']}_method_harness.php";
-    $outputPath = get_output_path($outputDir, $harnessName);
 
-    $harness = common_harness_header();
-    $harness .= "require_once '$filepath';\n";
+    foreach (HarnessType::cases() as $type) {
+        $harnessName = "{$basename}_{$method['class']}_{$method['method']}_method_harness.php";
+        $dir = $outputDir . DIRECTORY_SEPARATOR . $type->name;
+        $outputPath = get_output_path($dir, $harnessName);
 
-    $argIndex = append_user_input_vars_to_harness($harness, $inputs, $filepath);
-    $args = append_function_params_to_harness($harness, $method['params'], $argIndex);
+        $harness = common_harness_header($type);
+        $harness .= "require_once '$filepath';\n";
 
-    if ($method['is_static']) {
-        if ($method['visibility'] === T_PRIVATE || $method['visibility'] === T_PROTECTED) {
-            $harness .= "\$method = new ReflectionMethod(\"{$method['class']}\", \"{$method['method']}\");\n";
-            $harness .= "\$method->setAccessible(true);\n";
-            $harness .= "\$method->invoke(null" . ($args ? ", $args" : "") . ");\n";
+        $argIndex = append_user_input_vars_to_harness($harness, $inputs, $filepath);
+        $args = append_function_params_to_harness($harness, $method['params'], $argIndex);
+
+        if ($method['is_static']) {
+            if ($method['visibility'] === T_PRIVATE || $method['visibility'] === T_PROTECTED) {
+                $harness .= "\$method = new ReflectionMethod(\"{$method['class']}\", \"{$method['method']}\");\n";
+                $harness .= "\$method->setAccessible(true);\n";
+                $harness .= "\$method->invoke(null" . ($args ? ", $args" : "") . ");\n";
+            } else {
+                $harness .= "{$method['class']}::{$method['method']}(" . ($args ?: "") . ");\n";
+            }
         } else {
-            $harness .= "{$method['class']}::{$method['method']}(" . ($args ?: "") . ");\n";
-        }
-    } else {
-        $harness .= "\$obj = new {$method['class']}();\n";
+            $harness .= "\$obj = new {$method['class']}();\n";
 
-        if ($method['visibility'] === T_PRIVATE || $method['visibility'] === T_PROTECTED) {
-            $harness .= "\$method = new ReflectionMethod(\"{$method['class']}\", \"{$method['method']}\");\n";
-            $harness .= "\$method->setAccessible(true);\n";
-            $harness .= "\$method->invoke(\$obj" . ($args ? ", $args" : "") . ");\n";
-        } else {
-            $harness .= "\$obj->{$method['method']}(" . ($args ?: "") . ");\n";
+            if ($method['visibility'] === T_PRIVATE || $method['visibility'] === T_PROTECTED) {
+                $harness .= "\$method = new ReflectionMethod(\"{$method['class']}\", \"{$method['method']}\");\n";
+                $harness .= "\$method->setAccessible(true);\n";
+                $harness .= "\$method->invoke(\$obj" . ($args ? ", $args" : "") . ");\n";
+            } else {
+                $harness .= "\$obj->{$method['method']}(" . ($args ?: "") . ");\n";
+            }
         }
+
+        file_put_contents($outputPath, $harness);
+        echo "Generated method harness: $outputPath\n";
     }
-
-    file_put_contents($outputPath, $harness);
-    echo "Generated method harness: $outputPath\n";
 }
 
 function is_inline_php_file(string $code): bool
@@ -493,16 +515,20 @@ function is_inline_php_file(string $code): bool
 function generate_inline_harness(string $filepath, array $inputs, string $outputDir): void
 {
     $basename = get_dash_file_path($filepath);
-    $harnessName = "{$basename}_inline_harness.php";
-    $outputPath = get_output_path($outputDir, $harnessName);
 
-    $harness = common_harness_header();
-    append_user_input_vars_to_harness($harness, $inputs, $filepath);
+    foreach (HarnessType::cases() as $type) {
+        $harnessName = "{$basename}_inline_harness.php";
+        $dir = $outputDir . DIRECTORY_SEPARATOR . $type->name;
+        $outputPath = get_output_path($dir, $harnessName);
 
-    $harness .= "require_once '$filepath';\n";
+        $harness = common_harness_header($type);
+        append_user_input_vars_to_harness($harness, $inputs, $filepath);
 
-    file_put_contents($outputPath, $harness);
-    echo "Generated inline harness: $outputPath\n";
+        $harness .= "require_once '$filepath';\n";
+
+        file_put_contents($outputPath, $harness);
+        echo "Generated inline harness: $outputPath\n";
+    }
 }
 
 if ($argc < 2) {
@@ -512,13 +538,16 @@ if ($argc < 2) {
 $targetDir = $argv[1];
 $outputDir = "$targetDir/" . OUTPUT_FOLDER;
 
-if (!is_dir($outputDir)) {
-    if (!mkdir($outputDir)) {
-        echo "Failed to create output directory: $outputDir\n";
-        exit(1);
+foreach (HarnessType::cases() as $type) {
+    $dir = $outputDir . DIRECTORY_SEPARATOR . $type->name;
+    if (!is_dir($dir)) {
+        if (!mkdir($dir, 0755, true)) {
+            echo "Failed to create output directory: $dir\n";
+            exit(1);
+        }
+    } else {
+        remove_all_php_files_from_folder($dir);
     }
-} else {
-    remove_all_php_files_from_folder($outputDir);
 }
 
 $phpFiles = extract_php_files($targetDir);

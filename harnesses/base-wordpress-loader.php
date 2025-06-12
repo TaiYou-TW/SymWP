@@ -1,16 +1,11 @@
 <?php
 
 /**
- * Stub functions to simplify emulation
+ * Stub functions to bypass permission and security checks
  */
 function wp_verify_nonce($nonce, $action = -1)
 {
     return 1;
-}
-
-function sanitize_text_field($str)
-{
-    return $str;
 }
 
 function current_user_can($capability)

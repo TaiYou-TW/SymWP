@@ -21,7 +21,7 @@ PHP_PATH = "../php-src/sapi/cli/php"
 S2E_COMMAND = "s2e"
 
 S2E_PROJECTS_DIR = "projects"
-HARNESS_DIR = ".harness"
+HARNESS_DIR = ".harness/symbolic"
 OUTPUT_DIR = "SymWP"
 
 XSS_PAYLOAD_MARKER = 'XSS_PAYLOAD_MARKER'
@@ -169,7 +169,8 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
     shutil.copy(harness_path, harness_dest)
     shutil.move(f"{proj_path}/{Path(harness_path).name}.symranges", f"{proj_path}/harness.symranges")
 
-    shutil.copy("wordpress-loader.php", proj_path)
+    shutil.copy("base-wordpress-loader.php", proj_path)
+    shutil.copy("symbolic-wordpress-loader.php", proj_path)
 
 
 def run_s2e(project_name: str, project_path: str) -> None:

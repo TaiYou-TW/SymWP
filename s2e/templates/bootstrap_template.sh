@@ -169,7 +169,8 @@ ${S2ECMD} get "WordPress.tar.gz"
 tar -xzf WordPress.tar.gz
 
 # WordPress loader
-${S2ECMD} get "wordpress-loader.php"
+${S2ECMD} get "base-wordpress-loader.php"
+${S2ECMD} get "symbolic-wordpress-loader.php"
 
 # Plugin
 
