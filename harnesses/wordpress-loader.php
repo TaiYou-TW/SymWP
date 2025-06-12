@@ -5,17 +5,17 @@
  */
 function wp_verify_nonce($nonce, $action = -1)
 {
-	return 1;
+    return 1;
 }
 
 function sanitize_text_field($str)
 {
-	return $str;
+    return $str;
 }
 
 function current_user_can($capability)
 {
-	return true;
+    return true;
 }
 
 function my_wp_initial_constants()
@@ -438,6 +438,9 @@ require ABSPATH . WPINC . '/script-modules.php';
 // require ABSPATH . WPINC . '/interactivity-api/class-wp-interactivity-api-directives-processor.php';
 // require ABSPATH . WPINC . '/interactivity-api/interactivity-api.php';
 require ABSPATH . WPINC . '/class-wp-plugin-dependencies.php';
+
+$GLOBALS['wp_textdomain_registry'] = new WP_Textdomain_Registry();
+$GLOBALS['wp_textdomain_registry']->init();
 
 my_wp_plugin_directory_constants();
 
