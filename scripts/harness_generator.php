@@ -55,15 +55,55 @@ function extract_functions_and_methods(string $content): array
 {
     $tokens = token_get_all($content);
     $functions = [];
-    $classes = [];
+    $methods = [];
     $count = count($tokens);
 
     $inClass = false;
+    $inCurly = false;
+    $inHeredoc = false;
     $namespace = '';
     $className = '';
     $visibility = T_PUBLIC;
 
     for ($i = 0; $i < $count; $i++) {
+        if (is_array($tokens[$i])) {
+            $type = $tokens[$i][0];
+
+            if (
+                in_array($type, [
+                    T_CONSTANT_ENCAPSED_STRING,
+                    T_ENCAPSED_AND_WHITESPACE,
+                ])
+            ) {
+                continue;
+            }
+
+            if (
+                in_array($type, [
+                    T_CURLY_OPEN,
+                    T_DOLLAR_OPEN_CURLY_BRACES,
+                    T_STRING_VARNAME,
+                ])
+            ) {
+                $inCurly = true;
+                continue;
+            }
+
+            if ($type === T_START_HEREDOC) {
+                $inHeredoc = true;
+                continue;
+            }
+
+            if ($type === T_END_HEREDOC) {
+                $inHeredoc = false;
+                continue;
+            }
+
+            if ($inHeredoc) {
+                continue;
+            }
+        }
+
         // namespace
         if (is_array($tokens[$i]) && $tokens[$i][0] === T_NAMESPACE) {
             $i += 2;
@@ -91,7 +131,7 @@ function extract_functions_and_methods(string $content): array
             $body = '';
             $braceCount = 0;
             $start = false;
-            $is_static = $tokens[$i - 2][0] === T_STATIC;
+            $isStatic = $tokens[$i - 2][0] === T_STATIC;
 
             // Get function name
             for ($i++; $i < $count; $i++) {
@@ -126,10 +166,52 @@ function extract_functions_and_methods(string $content): array
 
             // Extract function body
             for ($i++; $i < $count; $i++) {
+                if (is_array($tokens[$i])) {
+                    $type = $tokens[$i][0];
+
+                    if (
+                        in_array($type, [
+                            T_CONSTANT_ENCAPSED_STRING,
+                            T_ENCAPSED_AND_WHITESPACE,
+                        ])
+                    ) {
+                        continue;
+                    }
+
+                    if (
+                        in_array($type, [
+                            T_CURLY_OPEN,
+                            T_DOLLAR_OPEN_CURLY_BRACES,
+                            T_STRING_VARNAME,
+                        ])
+                    ) {
+                        $inCurly = true;
+                        continue;
+                    }
+
+                    if ($type === T_START_HEREDOC) {
+                        $inHeredoc = true;
+                        continue;
+                    }
+
+                    if ($type === T_END_HEREDOC) {
+                        $inHeredoc = false;
+                        continue;
+                    }
+
+                    if ($inHeredoc) {
+                        continue;
+                    }
+                }
+
                 if ($tokens[$i] === '{') {
                     $start = true;
                     $braceCount++;
                 } elseif ($tokens[$i] === '}') {
+                    if ($inCurly) {
+                        $inCurly = false;
+                        continue;
+                    }
                     $braceCount--;
                 }
 
@@ -144,24 +226,32 @@ function extract_functions_and_methods(string $content): array
 
             if ($name && $body) {
                 if ($inClass) {
-                    $classes[] = [
+                    $methods[] = [
                         'class' => $className,
                         'method' => $name,
                         'params' => $params,
                         'body' => $body,
                         'visibility' => $visibility,
-                        'is_static' => $is_static,
+                        'is_static' => $isStatic,
                     ];
                 } else {
-                    $functions[] = ['name' => $name, 'params' => $params, 'body' => $body];
+                    $functions[] = [
+                        'name' => $name,
+                        'params' => $params,
+                        'body' => $body
+                    ];
                 }
             }
 
-            $visibility = T_PUBLIC; // reset for next method
+            $visibility = T_PUBLIC;
             continue;
         }
 
         if ($tokens[$i] === '}') {
+            if ($inCurly) {
+                $inCurly = false;
+                continue;
+            }
             $inClass = false;
             $className = '';
             $visibility = T_PUBLIC;
@@ -169,7 +259,7 @@ function extract_functions_and_methods(string $content): array
         }
     }
 
-    return [$functions, $classes];
+    return [$functions, $methods];
 }
 
 function extract_user_input_vars(string $body): array
