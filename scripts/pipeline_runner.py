@@ -26,7 +26,7 @@ OUTPUT_DIR = "SymWP"
 
 XSS_PAYLOAD_MARKER = 'XSS_PAYLOAD_MARKER'
 
-FATAL_ERROR_THRESHOLD = 100
+FATAL_ERROR_THRESHOLD = 10000
 
 def parse_args() -> None:
     """
@@ -240,12 +240,11 @@ def extract_symbolic_args(project_path: str) -> dict | None:
         with open(log_file, "r", errors='ignore') as f:
             for line in f:
                 if "Fatal error" in line:
-                    print('[!] Fatal error happened! Message:\n')
                     error_counter += 1
                     in_error = True
 
                     '''
-                    There may have some fatal erro during symbolic execution.
+                    There may have some fatal error during symbolic execution.
                     The "possible" resason is that concurrent execution of S2E
                     may cause I/O errors. So, we only stop the analysis if the
                     number of fatal errors exceeds a threshold.
@@ -268,6 +267,7 @@ def extract_symbolic_args(project_path: str) -> dict | None:
                 sqli_matches = re.findall(r'v\d+_arg\d+_\d+ = {[^}]*}; \(string\) "([^)]*)"', line)
                 if sqli_matches and 'SqliteFunctionTracker: Test case:' in line:
                     sqli_args.add(tuple(sqli_matches))
+                    continue
 
     xss_args = remove_incomplete_args(xss_args)
     sqli_args = remove_incomplete_args(sqli_args)
