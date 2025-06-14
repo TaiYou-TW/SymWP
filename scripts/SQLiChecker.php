@@ -3,6 +3,7 @@
 class SQLiChecker
 {
     private const PAYLOAD = "'\";/\\-+=*\`|)(#-- ,!@~<>%";
+    private const OUTPUT_DIR = '.SQLiChecker_output';
     private string $harnessPath;
     private array $argvValues;
 
@@ -14,20 +15,28 @@ class SQLiChecker
 
     public function run(): array
     {
+        $this->check_or_create_output_dir();
+
         $results = [];
 
         for ($i = 0; $i < count($this->argvValues); $i++) {
             $originalArgv = $this->argvValues[$i];
             $this->argvValues[$i] = self::PAYLOAD;
 
-            $output = $this->run_harness();
+            $output = "Argv: ";
+            for ($j = 0; $j < count($this->argvValues); $j++) {
+                $output .= "arg{$j}=" . escapeshellarg($this->argvValues[$j]) . " ";
+            }
+            $output .= "\n\nOutput:\n";
+
+            $output .= $this->run_harness();
             if (is_null($output)) {
                 $this->argvValues[$i] = $originalArgv;
                 continue;
             }
 
-            file_put_contents('.SQLiChecker_output.html', $output);
-            echo "== Output Analysis for: $this->harnessPath ==\n";
+            file_put_contents(self::OUTPUT_DIR . '/' . basename($this->harnessPath) . ".arg{$i}.out", $output);
+            echo "[*] Testing argv $i...\n";
 
             $results = array_merge($results, $this->detect_taint_exposure($output));
 
@@ -51,11 +60,21 @@ class SQLiChecker
             $pattern = '/\[query\] => (.*)/i';
             preg_match($pattern, $output, $result);
             if (is_array($result) && count($result) > 1) {
-                $results[] = "🚨 Potential SQL injection detected: {$result[1]}\n";
+                $results[] = "[!] Potential SQL injection detected: {$result[1]}";
             }
         }
 
         return $results;
+    }
+
+    private function check_or_create_output_dir()
+    {
+        if (!is_dir(self::OUTPUT_DIR)) {
+            if (!mkdir(self::OUTPUT_DIR, 0755, true)) {
+                echo "[!] Failed to create output directory: " . self::OUTPUT_DIR . "\n";
+                exit(1);
+            }
+        }
     }
 }
 
@@ -63,11 +82,15 @@ if ($argv && $argv[0] && realpath($argv[0]) === __FILE__) {
     if (count($argv) < 3) {
         die("Usage: php {$argv[0]} <harness_file> ...<argv>\n");
     }
+    if (!file_exists($argv[1])) {
+        die("[!] Harness file does not exist.\n");
+    }
+
     $checker = new SQLiChecker($argv[1], array_slice($argv, 2));
     $issues = $checker->run();
 
     if (empty($issues)) {
-        echo "✅ No issues detected.\n";
+        echo "[*] No issues detected.\n";
     } else {
         foreach ($issues as $issue) {
             echo "{$issue}\n";
