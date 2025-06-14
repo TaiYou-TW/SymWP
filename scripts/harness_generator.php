@@ -71,22 +71,12 @@ function extract_functions_and_methods(string $content): array
 
             if (
                 in_array($type, [
-                    T_CONSTANT_ENCAPSED_STRING,
-                    T_ENCAPSED_AND_WHITESPACE,
-                ])
-            ) {
-                continue;
-            }
-
-            if (
-                in_array($type, [
                     T_CURLY_OPEN,
                     T_DOLLAR_OPEN_CURLY_BRACES,
                     T_STRING_VARNAME,
                 ])
             ) {
                 $inCurly = true;
-                continue;
             }
 
             if ($type === T_START_HEREDOC) {
@@ -171,22 +161,12 @@ function extract_functions_and_methods(string $content): array
 
                     if (
                         in_array($type, [
-                            T_CONSTANT_ENCAPSED_STRING,
-                            T_ENCAPSED_AND_WHITESPACE,
-                        ])
-                    ) {
-                        continue;
-                    }
-
-                    if (
-                        in_array($type, [
                             T_CURLY_OPEN,
                             T_DOLLAR_OPEN_CURLY_BRACES,
                             T_STRING_VARNAME,
                         ])
                     ) {
                         $inCurly = true;
-                        continue;
                     }
 
                     if ($type === T_START_HEREDOC) {
@@ -210,9 +190,9 @@ function extract_functions_and_methods(string $content): array
                 } elseif ($tokens[$i] === '}') {
                     if ($inCurly) {
                         $inCurly = false;
-                        continue;
+                    } else {
+                        $braceCount--;
                     }
-                    $braceCount--;
                 }
 
                 if ($start) {
@@ -683,9 +663,9 @@ foreach ($phpFiles as $phpFile) {
 }
 
 if (($inline_count + $function_count + $method_count) === 0) {
-    echo "No harnesses generated for plugin $targetDir.";
+    echo "No harnesses generated for plugin \"$targetDir\".";
 } else {
-    echo "Successfully generated harnesses for plugin $targetDir.\n";
+    echo "Successfully generated harnesses for plugin \"$targetDir\".\n";
     echo "Inline: $inline_count\n";
     echo "Function: $function_count\n";
     echo "Method: $method_count\n";
