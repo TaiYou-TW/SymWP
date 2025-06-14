@@ -245,12 +245,18 @@ function extract_functions_and_methods(string $content): array
 function extract_user_input_vars(string $body): array
 {
     $inputs = [];
-    $patterns = ['\$_GET', '\$_POST', '\$_REQUEST', '\$_COOKIE', '\$_FILES'];
+    $patterns = ['\$_GET', '\$_POST', '\$_REQUEST', '\$_COOKIE', '\$_FILES', '\$_SERVER'];
 
     foreach ($patterns as $pattern) {
         if (preg_match_all("/{$pattern}\s*\[\s*['\"]([^'\"]+)['\"]\s*\]/", $body, $matches)) {
             foreach ($matches[1] as $match) {
-                $patternKey = str_replace('\\', '', $pattern); // remove \ from patterns
+                $patternKey = str_replace('\\', '', $pattern);
+
+                // simple check for non user-defined $_SERVER variables
+                if ($patternKey === '$_SERVER' && !str_starts_with($match, "HTTP_")) {
+                    continue;
+                }
+                
                 if (!in_array($match, $inputs[$patternKey] ?? [])) {
                     $inputs[$patternKey][] = $match;
                 }
