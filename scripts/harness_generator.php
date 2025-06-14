@@ -615,7 +615,6 @@ function generate_inline_harness(string $filepath, array $inputs, string $output
         $harness .= "require_once '$filepath';\n";
 
         file_put_contents($outputPath, $harness);
-        echo "Generated inline harness: $outputPath\n";
     }
 }
 
@@ -623,7 +622,7 @@ if ($argc < 2) {
     echo "Usage: php {$argv[0]} <target_directory>\n";
     exit(1);
 }
-$targetDir = $argv[1];
+$targetDir = rtrim($argv[1], '/\\');
 $outputDir = "$targetDir/" . OUTPUT_FOLDER;
 
 foreach (HarnessType::cases() as $type) {
