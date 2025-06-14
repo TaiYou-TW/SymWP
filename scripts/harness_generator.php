@@ -525,7 +525,6 @@ function generate_function_harness(string $filepath, array $function, array $inp
         $harness .= "{$funcname}({$args});\n";
 
         file_put_contents($outputPath, $harness);
-        echo "Generated function harness: $outputPath\n";
     }
 }
 
@@ -565,7 +564,6 @@ function generate_method_harness(string $filepath, array $method, array $inputs,
         }
 
         file_put_contents($outputPath, $harness);
-        echo "Generated method harness: $outputPath\n";
     }
 }
 
@@ -647,22 +645,26 @@ if ($plugin_entry_file === '') {
     exit(1);
 }
 
+$inline_count = 0;
+$function_count = 0;
+$method_count = 0;
 foreach ($phpFiles as $phpFile) {
     $code = file_get_contents($phpFile);
 
     [$functions, $methods] = extract_functions_and_methods($code);
 
-
     if (is_inline_php_file($code)) {
         $inputs = extract_user_input_vars($code);
         if (!empty($inputs)) {
             generate_inline_harness($phpFile, $inputs, $outputDir);
+            $inline_count++;
         }
     } else {
         foreach ($functions as $function) {
             $inputs = extract_user_input_vars($function['body']);
             if (!empty($inputs)) {
                 generate_function_harness($phpFile, $function, $inputs, $outputDir);
+                $function_count++;
             }
         }
 
@@ -675,7 +677,17 @@ foreach ($phpFiles as $phpFile) {
                     $inputs,
                     $outputDir,
                 );
+                $method_count++;
             }
         }
     }
+}
+
+if (($inline_count + $function_count + $method_count) === 0) {
+    echo "No harnesses generated for plugin $targetDir.";
+} else {
+    echo "Successfully generated harnesses for plugin $targetDir.\n";
+    echo "Inline: $inline_count\n";
+    echo "Function: $function_count\n";
+    echo "Method: $method_count\n";
 }
