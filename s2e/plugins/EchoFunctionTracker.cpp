@@ -292,8 +292,6 @@ void EchoFunctionTracker::writeSimpleTestCase(llvm::raw_ostream &os, const Concr
                 ss << (char) vp.second[i];
             } else if (vp.second[i] == 0) {
                 break;
-            } else {
-                ss << ".";
             }
         }
         ss << "\"";

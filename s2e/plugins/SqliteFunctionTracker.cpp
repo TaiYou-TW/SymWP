@@ -140,8 +140,6 @@ void SqliteFunctionTracker::writeSimpleTestCase(llvm::raw_ostream &os, const Con
                 ss << (char) vp.second[i];
             } else if (vp.second[i] == 0) {
                 break;
-            } else {
-                ss << ".";
             }
         }
         ss << "\"";
