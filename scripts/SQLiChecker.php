@@ -6,11 +6,20 @@ class SQLiChecker
     private const OUTPUT_DIR = '.SQLiChecker_output';
     private string $harnessPath;
     private array $argvValues;
+    private string $phpExecutable;
+    private const PHP_ENV_VAR = 'SYMWP_PHP';
+    private const DEFAULT_PHP_EXECUTABLE = 'php';
 
     public function __construct(string $harnessPath, array $argv)
     {
         $this->harnessPath = $harnessPath;
         $this->argvValues = $argv;
+
+        $this->phpExecutable = getenv(self::PHP_ENV_VAR) ?? self::DEFAULT_PHP_EXECUTABLE;
+        if (!getenv(self::PHP_ENV_VAR) || !file_exists($this->phpExecutable)) {
+            echo "[!] PHP executable not found. Please set SYMWP_PHP environment variable to the path of your PHP executable.\n";
+            die(1);
+        }
     }
 
     public function run(): array
@@ -49,7 +58,7 @@ class SQLiChecker
 
     private function run_harness(): string|bool|null
     {
-        $cmd = "php $this->harnessPath " . implode(' ', array_map('escapeshellarg', $this->argvValues)) . " 2>&1";
+        $cmd = "$this->phpExecutable $this->harnessPath " . implode(' ', array_map('escapeshellarg', $this->argvValues)) . " 2>&1";
         return shell_exec($cmd);
     }
 

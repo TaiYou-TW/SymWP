@@ -14,6 +14,9 @@ class XSSChecker
 
     private string $harnessPath;
     private array $argvValues;
+    private string $phpExecutable;
+    private const PHP_ENV_VAR = 'SYMWP_PHP';
+    private const DEFAULT_PHP_EXECUTABLE = 'php';
 
     public function __construct(string $harnessPath, array $argv)
     {
@@ -29,9 +32,15 @@ class XSSChecker
         }
 
         if (!$found) {
-         for ($i = 0; $i < count($this->argvValues); $i++) {
+            for ($i = 0; $i < count($this->argvValues); $i++) {
                 $this->argvValues[$i] = self::PAYLOAD;
-        }   
+            }
+        }
+
+        $this->phpExecutable = getenv(self::PHP_ENV_VAR) ?? self::DEFAULT_PHP_EXECUTABLE;
+        if (!getenv(self::PHP_ENV_VAR) || !file_exists($this->phpExecutable)) {
+            echo "[!] PHP executable not found. Please set SYMWP_PHP environment variable to the path of your PHP executable.\n";
+            die(1);
         }
     }
 
@@ -65,7 +74,7 @@ class XSSChecker
 
     private function run_harness(): string|bool|null
     {
-        $cmd = "php $this->harnessPath " . implode(' ', array_map('escapeshellarg', $this->argvValues));
+        $cmd = "$php $this->harnessPath " . implode(' ', array_map('escapeshellarg', $this->argvValues));
         return shell_exec($cmd);
     }
 
@@ -109,7 +118,7 @@ class XSSChecker
         return $results;
     }
 
-        private function check_or_create_output_dir()
+    private function check_or_create_output_dir()
     {
         if (!is_dir(self::OUTPUT_DIR)) {
             if (!mkdir(self::OUTPUT_DIR, 0755, true)) {
