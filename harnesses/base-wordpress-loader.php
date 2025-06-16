@@ -447,3 +447,5 @@ require ABSPATH . WPINC . '/pluggable.php';
 require ABSPATH . WPINC . '/pluggable-deprecated.php';
 
 require_once ABSPATH . '/wp-admin/includes/admin.php';
+
+wp_set_current_user(1);
