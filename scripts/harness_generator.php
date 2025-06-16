@@ -245,7 +245,7 @@ function extract_functions_and_methods(string $content): array
 function extract_user_input_vars(string $body): array
 {
     $inputs = [];
-    $patterns = ['\$_GET', '\$_POST', '\$_REQUEST', '\$_COOKIE', '\$_FILES', '\$_SERVER'];
+    $patterns = ['\$_GET', '\$_POST', '\$_REQUEST', '\$_COOKIE', '\$_FILES', '\$_SERVER', '\$_ENV'];
 
     foreach ($patterns as $pattern) {
         if (preg_match_all("/{$pattern}\s*\[\s*['\"]([^'\"]+)['\"]\s*\]/", $body, $matches)) {
@@ -256,7 +256,7 @@ function extract_user_input_vars(string $body): array
                 if ($patternKey === '$_SERVER' && !str_starts_with($match, "HTTP_")) {
                     continue;
                 }
-                
+
                 if (!in_array($match, $inputs[$patternKey] ?? [])) {
                     $inputs[$patternKey][] = $match;
                 }
