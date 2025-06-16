@@ -48,15 +48,16 @@ class XSSChecker
             }
             $output .= "\n\nOutput:\n";
 
-            $output .= $this->run_harness();
-            if (is_null($output)) {
+            $result = $this->run_harness();
+            if (is_null($result)) {
                 continue;
             }
+            $output .= $result;
 
             file_put_contents(self::OUTPUT_DIR . '/' . basename($this->harnessPath) . ".arg{$i}.out", $output);
             echo "[*] Testing argv $i...\n";
 
-            $results = array_merge($results, $this->detect_taint_exposure($output));
+            $results = array_merge($results, $this->detect_taint_exposure($result));
         }
 
         return $results;
