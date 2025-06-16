@@ -13,6 +13,22 @@ function current_user_can($capability)
     return true;
 }
 
+/**
+ * Original php built-in filter_input() can't obtain values from dynamic changed superglobals like $_GET, $_POST, etc.
+ * Therefore, we can't use it in our tests, as we need to be able to change these superglobals dynamically.
+ * So, we patch the source code to remove it from interpreter and reimplement a simple version here.
+ */
+function filter_input($type, $name, $filter = FILTER_DEFAULT, $options = null) {
+    switch ($type) {
+        case INPUT_GET: return $_GET[$name] ?? null;
+        case INPUT_POST: return $_POST[$name] ?? null;
+        case INPUT_COOKIE: return $_COOKIE[$name] ?? null;
+        case INPUT_SERVER: return $_SERVER[$name] ?? null;
+        case INPUT_ENV: return $_ENV[$name] ?? null;
+        default: return null;
+    }
+}
+
 function my_wp_initial_constants()
 {
     global $blog_id;

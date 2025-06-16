@@ -17,16 +17,17 @@ XSS_CHECKER = "XSSChecker.php"
 SQLI_CHECKER = "SQLiChecker.php"
 
 S2E_BOOTSTRAP_TEMPLATE_PATH = "bootstrap_template.sh"
-PHP_PATH = "../php-src/sapi/cli/php"
 S2E_COMMAND = "s2e"
 
 S2E_PROJECTS_DIR = "projects"
 HARNESS_DIR = ".harness/symbolic"
 OUTPUT_DIR = "SymWP"
 
-XSS_PAYLOAD_MARKER = 'XSS_PAYLOAD_MARKER'
+XSS_PAYLOAD_MARKER = "XSS_PAYLOAD_MARKER"
 
 FATAL_ERROR_THRESHOLD = 10000
+
+ENV_SYMWP_PHP = "SYMWP_PHP"
 
 def parse_args() -> None:
     """
@@ -54,12 +55,12 @@ def is_all_dependencies_present() -> bool:
     Check if all required dependencies are present.
     Returns True if all dependencies are found, otherwise False.
     """
+    global PHP_EXECUTABLE
     dependencies = [
         HARNESS_GEN_SCRIPT,
         XSS_CHECKER,
         SQLI_CHECKER,
         S2E_BOOTSTRAP_TEMPLATE_PATH,
-        PHP_PATH,
     ]
 
     is_all_present = True
@@ -79,6 +80,16 @@ def is_all_dependencies_present() -> bool:
         print(f"[-] S2E command is not available or not working properly. Please activate S2E environment or check your installation.")
         is_all_present = False
 
+    environment_vars = [
+        ENV_SYMWP_PHP,
+    ]
+    for var in environment_vars:
+        if var not in os.environ:
+            print(f"[-] Environment variable {var} is not set.")
+            is_all_present = False
+
+    PHP_EXECUTABLE = os.getenv(ENV_SYMWP_PHP)
+
     return is_all_present
 
 
@@ -89,7 +100,7 @@ def generate_harnesses(plugin_folder: str) -> None:
         plugin_folder (str): Path to the WordPress plugin folder.
     """
     print(f"[+] Generating harnesses for: {plugin_folder}")
-    subprocess.run([PHP_PATH, HARNESS_GEN_SCRIPT, plugin_folder], check=True)
+    subprocess.run([PHP_EXECUTABLE, HARNESS_GEN_SCRIPT, plugin_folder], check=True)
 
 def get_argv_count(harness_path: str) -> int:
     """
@@ -119,7 +130,7 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
     # Run S2E command to new project
     print(f"[+] Generating new project...")
     subprocess.run(
-        [S2E_COMMAND, "new_project","-f", "-n", project_name, PHP_PATH, harness_path],
+        [S2E_COMMAND, "new_project","-f", "-n", project_name, PHP_EXECUTABLE, harness_path],
         check=True,
         stdout=subprocess.DEVNULL, 
         stderr=subprocess.DEVNULL,
@@ -153,8 +164,9 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
     s2e_config_path = proj_path / "s2e-config.lua"
     with open(s2e_config_path, 'a') as f:
         f.write('\nadd_plugin("FunctionMonitor")\n')
-        f.write('add_plugin("EchoFunctionTracker")\npluginsConfig.EchoFunctionTracker = {\n    addressToTrack = 0xb4b2e3,\n}\n')
-        f.write('add_plugin("SqliteFunctionTracker")\npluginsConfig.SqliteFunctionTracker = {\n    addressToTrack = 0x8bf782,\n}\n')
+        # TODO: get these addresses dynamically
+        f.write('add_plugin("EchoFunctionTracker")\npluginsConfig.EchoFunctionTracker = {\n    addressToTrack = 0xb4c393,\n}\n')
+        f.write('add_plugin("SqliteFunctionTracker")\npluginsConfig.SqliteFunctionTracker = {\n    addressToTrack = 0x8c033e,\n}\n')
 
     print(f"[+] Copying files...")
     plugin_zip = f"{plugin_name}.tar.gz"
@@ -293,7 +305,7 @@ def run_dynamic_checker(harness_path: str, symbolic_args: dict) -> str:
         for arg in symbolic_args['xss']:
             result += f"[*] Testing {arg}\n"
             try:
-                result += subprocess.run([PHP_PATH, XSS_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
+                result += subprocess.run([PHP_EXECUTABLE, XSS_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
             except:
                 result += "Error running XSS_CHECKER\n"
     else:
@@ -304,7 +316,7 @@ def run_dynamic_checker(harness_path: str, symbolic_args: dict) -> str:
         for arg in symbolic_args['sqli']:
             result += f"[*] Testing {arg}\n"
             try:
-                result += subprocess.run([PHP_PATH, SQLI_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
+                result += subprocess.run([PHP_EXECUTABLE, SQLI_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
             except:
                 result += "Error running SQLiChecker\n"
     else:

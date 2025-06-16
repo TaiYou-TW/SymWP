@@ -264,6 +264,19 @@ function extract_user_input_vars(string $body): array
         }
     }
 
+    // Find user-input from filter_input()
+    $filterInputIndexTable = [
+        'INPUT_GET' => '$_GET',
+        'INPUT_POST' => '$_POST',
+        'INPUT_COOKIE' => '$_COOKIE',
+        'INPUT_SERVER' => '$_SERVER',
+        'INPUT_ENV' => '$_ENV',
+    ];
+    if (preg_match_all("/filter_input\s*\(\s*([^,\s]+)\s*,\s*['\"]([^'\"]+)['\"][^)]*\)/", $body, $matches)) {
+        $index = $filterInputIndexTable[$matches[1][0]];
+        $inputs[$index][] = $matches[2][0];
+    }
+
     // TODO: those three patterns are not perfect and may not cover all cases.
     // They may be false positives or false negatives. Implement a more robust solution later.
 

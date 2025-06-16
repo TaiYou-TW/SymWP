@@ -1,0 +1,92 @@
+diff --git a/ext/filter/filter.c b/ext/filter/filter.c
+old mode 100644
+new mode 100755
+index 50eefb440d6..6fdf88008ee
+--- a/ext/filter/filter.c
++++ b/ext/filter/filter.c
+@@ -565,70 +565,6 @@ static void php_filter_array_handler(zval *input, HashTable *op_ht, zend_long op
+ }
+ /* }}} */
+ 
+-/* {{{ Returns the filtered variable 'name'* from source `type`. */
+-PHP_FUNCTION(filter_input)
+-{
+-	zend_long fetch_from, filter = FILTER_DEFAULT;
+-	zval *input = NULL, *tmp;
+-	zend_string *var;
+-	HashTable *filter_args_ht = NULL;
+-	zend_long filter_args_long = 0;
+-
+-	ZEND_PARSE_PARAMETERS_START(2, 4)
+-		Z_PARAM_LONG(fetch_from)
+-		Z_PARAM_STR(var)
+-		Z_PARAM_OPTIONAL
+-		Z_PARAM_LONG(filter)
+-		Z_PARAM_ARRAY_HT_OR_LONG(filter_args_ht, filter_args_long)
+-	ZEND_PARSE_PARAMETERS_END();
+-
+-	if (!PHP_FILTER_ID_EXISTS(filter)) {
+-		php_error_docref(NULL, E_WARNING, "Unknown filter with ID " ZEND_LONG_FMT, filter);
+-		RETURN_FALSE;
+-	}
+-
+-	input = php_filter_get_storage(fetch_from);
+-	if (EG(exception)) {
+-		RETURN_THROWS();
+-	}
+-
+-	if (!input || (tmp = zend_hash_find(Z_ARRVAL_P(input), var)) == NULL) {
+-		zend_long filter_flags = 0;
+-		if (!filter_args_ht) {
+-			filter_flags = filter_args_long;
+-		} else {
+-			zval *option, *opt, *def;
+-			if ((option = zend_hash_str_find(filter_args_ht, "flags", sizeof("flags") - 1)) != NULL) {
+-				filter_flags = zval_get_long(option);
+-			}
+-
+-			if ((opt = zend_hash_str_find_deref(filter_args_ht, "options", sizeof("options") - 1)) != NULL &&
+-				Z_TYPE_P(opt) == IS_ARRAY &&
+-				(def = zend_hash_str_find_deref(Z_ARRVAL_P(opt), "default", sizeof("default") - 1)) != NULL
+-			) {
+-				ZVAL_COPY(return_value, def);
+-				return;
+-			}
+-		}
+-
+-		/* The FILTER_NULL_ON_FAILURE flag inverts the usual return values of
+-		 * the function: normally when validation fails false is returned, and
+-		 * when the input value doesn't exist NULL is returned. With the flag
+-		 * set, NULL and false should be returned, respectively. Ergo, although
+-		 * the code below looks incorrect, it's actually right. */
+-		if (filter_flags & FILTER_NULL_ON_FAILURE) {
+-			RETURN_FALSE;
+-		} else {
+-			RETURN_NULL();
+-		}
+-	}
+-
+-	ZVAL_DUP(return_value, tmp);
+-
+-	php_filter_call(return_value, filter, filter_args_ht, filter_args_long, FILTER_REQUIRE_SCALAR);
+-}
+-/* }}} */
+-
+ /* {{{ Returns the filtered version of the variable. */
+ PHP_FUNCTION(filter_var)
+ {
+diff --git a/ext/filter/filter.stub.php b/ext/filter/filter.stub.php
+old mode 100644
+new mode 100755
+index 030de50f518..f43309e459b
+--- a/ext/filter/filter.stub.php
++++ b/ext/filter/filter.stub.php
+@@ -296,8 +296,6 @@
+ 
+ function filter_has_var(int $input_type, string $var_name): bool {}
+ 
+-function filter_input(int $type, string $var_name, int $filter = FILTER_DEFAULT, array|int $options = 0): mixed {}
+-
+ function filter_var(mixed $value, int $filter = FILTER_DEFAULT, array|int $options = 0): mixed {}
+ 
+ /** @refcount 1 */

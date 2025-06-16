@@ -50,6 +50,7 @@ cd ../
 
 # Manually compile php-src
 cd php-src
+git apply ../patches/php.patch
 sudo apt install -y pkg-config build-essential autoconf bison re2c libxml2-dev libsqlite3-dev
 ./buildconf
 ./configure CFLAGS="-no-pie" CXXFLAGS="-no-pie" CPPFLAGS="-no-pie" --enable-debug
@@ -75,6 +76,16 @@ s2e build
 wget https://downloads.wordpress.org/plugin/custom-404-pro.3.2.7.zip
 unzip custom-404-pro.3.2.7.zip
 
+# Set env
+export SYMWP_PHP=/home/s2e/php-src/sapi/cli/php # absolute path of compiled PHP
+
 # Start testing!
 ./pipeline_runner.py custom-404-pro # `-h` to see help
+```
+
+## How to check function addresses?
+
+```
+objdump ./sapi/cli/php -d | grep "php_output_write>:"
+objdump ./sapi/cli/php -d | grep "sqlite_handle_preparer>:"
 ```
