@@ -355,6 +355,7 @@ def main():
 
     for harness in harnesses:
         harness_path = str(harness)
+        concrete_harness_path = harness_path.replace('/symbolic/', '/concrete/')
         project_name = f"{plugin_name}_{harness.stem}"
         argv_count = get_argv_count(harness_path)
 
@@ -375,7 +376,7 @@ def main():
         if symbolic_args is None:
             break
 
-        result = run_dynamic_checker(harness_path, symbolic_args)
+        result = run_dynamic_checker(concrete_harness_path, symbolic_args)
         with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.args", 'w') as f:
             f.write('XSS: ')
             f.write(', '.join(str(arg) for arg in symbolic_args['xss']))
