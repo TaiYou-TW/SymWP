@@ -17,6 +17,7 @@ const WP_REST_REQUEST_SET_PARAMS_METHODS = [
 const SKIP_FUNCTION_CALLS = [
     'defined',
     'class_exists',
+    'function_exists',
 ];
 const PLUGIN_FOLDER_PREFIX = 'wp-content/plugins/';
 
@@ -657,26 +658,26 @@ foreach ($phpFiles as $phpFile) {
             generate_inline_harness($phpFile, $inputs, $outputDir);
             $inline_count++;
         }
-    } else {
-        foreach ($functions as $function) {
-            $inputs = extract_user_input_vars($function['body']);
-            if (!empty($inputs)) {
-                generate_function_harness($phpFile, $function, $inputs, $outputDir);
-                $function_count++;
-            }
-        }
+    }
 
-        foreach ($methods as $method) {
-            $inputs = extract_user_input_vars($method['body']);
-            if (!empty($inputs)) {
-                generate_method_harness(
-                    $phpFile,
-                    $method,
-                    $inputs,
-                    $outputDir,
-                );
-                $method_count++;
-            }
+    foreach ($functions as $function) {
+        $inputs = extract_user_input_vars($function['body']);
+        if (!empty($inputs)) {
+            generate_function_harness($phpFile, $function, $inputs, $outputDir);
+            $function_count++;
+        }
+    }
+
+    foreach ($methods as $method) {
+        $inputs = extract_user_input_vars($method['body']);
+        if (!empty($inputs)) {
+            generate_method_harness(
+                $phpFile,
+                $method,
+                $inputs,
+                $outputDir,
+            );
+            $method_count++;
         }
     }
 }
