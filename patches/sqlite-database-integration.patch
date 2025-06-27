@@ -1,5 +1,42 @@
+diff --git a/wp-includes/sqlite/class-wp-sqlite-lexer.php b/wp-includes/sqlite/class-wp-sqlite-lexer.php
+index 8619cb3..7ba5130 100644
+--- a/wp-includes/sqlite/class-wp-sqlite-lexer.php
++++ b/wp-includes/sqlite/class-wp-sqlite-lexer.php
+@@ -95,11 +95,11 @@ class WP_SQLite_Lexer {
+ 	);
+ 
+ 	/**
+-	 * The string to be parsed.
++	 * The array of string to be parsed.
+ 	 *
+-	 * @var string
++	 * @var array
+ 	 */
+-	public $str = '';
++	public $str = [];
+ 
+ 	/**
+ 	 * The length of `$str`.
+@@ -1432,7 +1432,7 @@ class WP_SQLite_Lexer {
+ 	 * @param string $delimiter The delimiter to be used.
+ 	 */
+ 	public function __construct( $str, $delimiter = null ) {
+-		$this->str = $str;
++		$this->str = str_split($str);
+ 		// `strlen` is used instead of `mb_strlen` because the lexer needs to parse each byte of the input.
+ 		$this->string_length = strlen( $str );
+ 
+@@ -1701,7 +1701,7 @@ class WP_SQLite_Lexer {
+ 		throw new Exception(
+ 			print_r(
+ 				array(
+-					'query'    => $this->str,
++					'query'    => implode('', $this->str),
+ 					'message'  => $msg,
+ 					'str'      => $str,
+ 					'position' => $pos,
 diff --git a/wp-includes/sqlite/class-wp-sqlite-translator.php b/wp-includes/sqlite/class-wp-sqlite-translator.php
-index c0ac1b8..3fedc09 100644
+index c0ac1b8..3418a90 100644
 --- a/wp-includes/sqlite/class-wp-sqlite-translator.php
 +++ b/wp-includes/sqlite/class-wp-sqlite-translator.php
 @@ -671,6 +671,17 @@ class WP_SQLite_Translator {
