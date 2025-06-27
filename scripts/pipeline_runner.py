@@ -18,6 +18,7 @@ SQLI_CHECKER = "SQLiChecker.php"
 
 S2E_BOOTSTRAP_TEMPLATE_PATH = "bootstrap_template.sh"
 S2E_COMMAND = "s2e"
+OBJDUMP_COMMAND = "objdump"
 
 S2E_PROJECTS_DIR = "projects"
 HARNESS_DIR = ".harness/symbolic"
@@ -28,6 +29,9 @@ XSS_PAYLOAD_MARKER = "XSS_PAYLOAD_MARKER"
 FATAL_ERROR_THRESHOLD = 10000
 
 ENV_SYMWP_PHP = "SYMWP_PHP"
+
+ECHO_FUNCTION_TRACKER_ADDRESS = ""
+SQLITE_FUNCTION_TRACKER_ADDRESS = ""
 
 def parse_args() -> None:
     """
@@ -69,16 +73,21 @@ def is_all_dependencies_present() -> bool:
             print(f"[-] Missing dependency: {dep}")
             is_all_present = False
 
-    try:
-        subprocess.run(
-            [S2E_COMMAND],
-            check=True,
-            stdout=subprocess.DEVNULL, 
-            stderr=subprocess.DEVNULL,
-        )
-    except FileNotFoundError:
-        print(f"[-] S2E command is not available or not working properly. Please activate S2E environment or check your installation.")
-        is_all_present = False
+    commands = [
+        [S2E_COMMAND],
+        [OBJDUMP_COMMAND, "-v"],
+    ]
+    for command in commands:
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            print(f"[-] Missing executable: {command}")
+            is_all_present = False
 
     environment_vars = [
         ENV_SYMWP_PHP,
@@ -115,6 +124,27 @@ def get_argv_count(harness_path: str) -> int:
     matches = re.findall(r'\$argv\[(\d+)\]', content)
     return max(map(int, matches)) + 1 if matches else 0
 
+def get_function_addresses() -> None:
+    """
+    Get the addresses of the functions to be monitored by the plugins.
+    This function uses objdump to find the addresses of specific functions in the PHP binary.
+    """
+    global ECHO_FUNCTION_TRACKER_ADDRESS, SQLITE_FUNCTION_TRACKER_ADDRESS
+
+    try:
+        output = subprocess.check_output([OBJDUMP_COMMAND, "-d", PHP_EXECUTABLE], text=True)
+        for line in output.splitlines():
+            if "php_output_write>:" in line:
+                ECHO_FUNCTION_TRACKER_ADDRESS = line.split()[0]
+            elif "sqlite_handle_preparer>:" in line:
+                SQLITE_FUNCTION_TRACKER_ADDRESS = line.split()[0]
+    except CalledProcessError as e:
+        print(f"[-] Error getting function addresses: {e}")
+
+    if not ECHO_FUNCTION_TRACKER_ADDRESS or not SQLITE_FUNCTION_TRACKER_ADDRESS:
+        print("[-] Could not find function addresses for EchoFunctionTracker or SqliteFunctionTracker.")
+        sys.exit(1)
+
 def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, project_name: str) -> None:
     """
     Set up a new S2E project with the given harness and symbolic arguments.
@@ -124,6 +154,8 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
         argv_count (int): Number of symbolic arguments.
         project_name (str): Name of the S2E project.
     """
+    global ECHO_FUNCTION_TRACKER_ADDRESS, SQLITE_FUNCTION_TRACKER_ADDRESS
+
     print(f"[+] Setting up S2E project for {project_name}...")
     proj_path = Path(S2E_PROJECTS_DIR) / project_name
     
@@ -159,14 +191,15 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
     with open(bootstrap_path, "w") as f:
         f.writelines(new_lines)
 
-    # TODO: don't write fixed addresses, but get them from actual php binary
+    if not ECHO_FUNCTION_TRACKER_ADDRESS or not SQLITE_FUNCTION_TRACKER_ADDRESS:
+        get_function_addresses()
+
     # enable plugins in s2e-config.lua
     s2e_config_path = proj_path / "s2e-config.lua"
-    with open(s2e_config_path, 'a') as f:
-        f.write('\nadd_plugin("FunctionMonitor")\n')
-        # TODO: get these addresses dynamically
-        f.write('add_plugin("EchoFunctionTracker")\npluginsConfig.EchoFunctionTracker = {\n    addressToTrack = 0xb4c393,\n}\n')
-        f.write('add_plugin("SqliteFunctionTracker")\npluginsConfig.SqliteFunctionTracker = {\n    addressToTrack = 0x8c033e,\n}\n')
+    with open(s2e_config_path, "a") as f:
+        f.write("\nadd_plugin(\"FunctionMonitor\")\n")
+        f.write(f"add_plugin(\"EchoFunctionTracker\")\npluginsConfig.EchoFunctionTracker = {{\n    addressToTrack = 0x{ECHO_FUNCTION_TRACKER_ADDRESS},\n}}\n")
+        f.write(f"add_plugin(\"SqliteFunctionTracker\")\npluginsConfig.SqliteFunctionTracker = {{\n    addressToTrack = 0x{SQLITE_FUNCTION_TRACKER_ADDRESS},\n}}\n")
 
     print(f"[+] Copying files...")
     plugin_zip = f"{plugin_name}.tar.gz"
