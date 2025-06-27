@@ -45,14 +45,13 @@ def parse_args() -> None:
     parser.add_argument("--timeout", "-t", type=int, default=30, help="S2E timeout in minutes (default: 30).")
     parser.add_argument("--argv-length", "-l", type=int, default=20, help="Length of symbolic argv (default: 20).")
     parser.add_argument("--core", "-c", type=int, default=16, help="Number of cores to use for S2E (default: 16).")
-    parser.add_argument("--include", "-i", type=str, default='', help="Include only specific targets, it can be filename, full path of file or method name.")
+    parser.add_argument("--include", "-i", type=str, default="", help="Include only specific targets, it can be filename, full path of file or method name.")
 
     args = parser.parse_args()
     TIMEOUT_MINUTES = args.timeout
     ARGV_LENGTH = args.argv_length
     CORE = args.core
-    INCLUDE = args.include.replace('/', '-').replace('.', '-')
-
+    INCLUDE = args.include.replace("/", "-").replace(".", "-")
 
 def is_all_dependencies_present() -> bool:
     """
@@ -101,7 +100,6 @@ def is_all_dependencies_present() -> bool:
 
     return is_all_present
 
-
 def generate_harnesses(plugin_folder: str) -> None:
     """
     Generate harnesses for the given plugin folder using the harness generator script.
@@ -121,7 +119,7 @@ def get_argv_count(harness_path: str) -> int:
     """
     with open(harness_path) as f:
         content = f.read()
-    matches = re.findall(r'\$argv\[(\d+)\]', content)
+    matches = re.findall(r"\$argv\[(\d+)\]", content)
     return max(map(int, matches)) + 1 if matches else 0
 
 def get_function_addresses() -> None:
@@ -180,7 +178,7 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
         if "S2E_SYM_ARGS=" in line:
             new_lines.append(line.replace("S2E_SYM_ARGS=\"\"", f"S2E_SYM_ARGS=\"{sym_args}\""))
         elif "execute \"${TARGET_PATH}\"" in line:
-            new_lines.append(line.replace('\n', '') + f" {' '.join(f'a' * ARGV_LENGTH for i in range(argv_count-1))}\n")
+            new_lines.append(line.replace("\n", "") + " " + " ".join("a" * ARGV_LENGTH for i in range(argv_count-1)) + "\n")
         elif "# Plugin" in line:
             new_lines.append(line)
             new_lines.append(f"${{S2ECMD}} get \"{plugin_name}.tar.gz\"\n")
@@ -204,12 +202,12 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
     print(f"[+] Copying files...")
     plugin_zip = f"{plugin_name}.tar.gz"
     if not Path(plugin_zip).exists():
-        shutil.make_archive(plugin_name, 'gztar', './', plugin_name)
+        shutil.make_archive(plugin_name, "gztar", "./", plugin_name)
     shutil.copy(f"{plugin_name}.tar.gz", proj_path)
 
-    wordpress_zip = 'WordPress.tar.gz'
+    wordpress_zip = "WordPress.tar.gz"
     if not Path(wordpress_zip).exists():
-        shutil.make_archive('WordPress', 'gztar', './', 'WordPress')
+        shutil.make_archive("WordPress", "gztar", "./", "WordPress")
     shutil.copy(wordpress_zip, proj_path)
 
     harness_dest = proj_path / "harness.php"
@@ -234,9 +232,9 @@ def run_s2e(project_name: str, project_path: str) -> None:
     print(f"[+] Start at: {now}, Estimated end at: {end}")
 
     try:
-        with open(str(project_path) + '/stdout.txt', 'w') as f:
+        with open(str(project_path) + "/stdout.txt", "w") as f:
             proc = subprocess.Popen(
-                [S2E_COMMAND, "run", '-n', '-t', str(TIMEOUT_MINUTES), '-c', str(CORE), project_name],
+                [S2E_COMMAND, "run", "-n", "-t", str(TIMEOUT_MINUTES), "-c", str(CORE), project_name],
                 stdout=f, 
                 stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid  # Ensure we can kill the process group
@@ -282,35 +280,35 @@ def extract_symbolic_args(project_path: str) -> dict | None:
     error_counter = 0
 
     for log_file in Path(project_path).rglob("stdout.txt"):
-        with open(log_file, "r", errors='ignore') as f:
+        with open(log_file, "r", errors="ignore") as f:
             for line in f:
                 if "Fatal error" in line:
                     error_counter += 1
                     in_error = True
 
-                    '''
+                    """
                     There may have some fatal error during symbolic execution.
                     The "possible" resason is that concurrent execution of S2E
                     may cause I/O errors. So, we only stop the analysis if the
                     number of fatal errors exceeds a threshold.
-                    '''
+                    """
                     if error_counter >= FATAL_ERROR_THRESHOLD:
                         print("[-] Too many fatal errors, stopping analysis.")
                         return None
 
                     continue
 
-                xss_matches = re.findall(r'v\d+_arg\d+_\d+(?:\(exploitable\))? = {[^}]*}; \(string\) "([^)]*)"', line)
-                if xss_matches and 'EchoFunctionTracker: Test case:' in line:
-                    exploitable_indexes = re.findall(r'v(\d+)_arg\d+_\d+(?:\(exploitable\))', line)
+                xss_matches = re.findall(r"v\d+_arg\d+_\d+(?:\(exploitable\))? = {[^}]*}; \(string\) \"([^)]*)\"", line)
+                if xss_matches and "EchoFunctionTracker: Test case:" in line:
+                    exploitable_indexes = re.findall(r"v(\d+)_arg\d+_\d+(?:\(exploitable\))", line)
                     for index in exploitable_indexes:
                         if int(index) < len(xss_matches):
                             xss_matches[int(index)] = XSS_PAYLOAD_MARKER
                     xss_args.add(tuple(xss_matches))
                     continue
 
-                sqli_matches = re.findall(r'v\d+_arg\d+_\d+ = {[^}]*}; \(string\) "([^)]*)"', line)
-                if sqli_matches and 'SqliteFunctionTracker: Test case:' in line:
+                sqli_matches = re.findall(r"v\d+_arg\d+_\d+ = {[^}]*}; \(string\) \"([^)]*)\"", line)
+                if sqli_matches and "SqliteFunctionTracker: Test case:" in line:
                     sqli_args.add(tuple(sqli_matches))
                     continue
 
@@ -318,8 +316,8 @@ def extract_symbolic_args(project_path: str) -> dict | None:
     sqli_args = remove_incomplete_args(sqli_args)
     
     return {
-        'xss': xss_args,
-        'sqli': sqli_args,
+        "xss": xss_args,
+        "sqli": sqli_args,
     }
 
 def run_dynamic_checker(harness_path: str, symbolic_args: dict) -> str:
@@ -332,10 +330,10 @@ def run_dynamic_checker(harness_path: str, symbolic_args: dict) -> str:
         str: Result of the dynamic analysis.
     """
     print(f"[+] Running dynamic analysis on {Path(harness_path).name} with symbolic args: {symbolic_args}")
-    result = ''
-    if 'xss' in symbolic_args and len(symbolic_args['xss']) > 0:
-        result = '[+] XSSChecker:\n'
-        for arg in symbolic_args['xss']:
+    result = ""
+    if "xss" in symbolic_args and len(symbolic_args["xss"]) > 0:
+        result = "[+] XSSChecker:\n"
+        for arg in symbolic_args["xss"]:
             result += f"[*] Testing {arg}\n"
             try:
                 result += subprocess.run([PHP_EXECUTABLE, XSS_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
@@ -344,9 +342,9 @@ def run_dynamic_checker(harness_path: str, symbolic_args: dict) -> str:
     else:
         result += "[-] No XSS arguments found.\n"
 
-    if 'sqli' in symbolic_args and len(symbolic_args['sqli']) > 0:
-        result += '[+] SQLiChecker:\n'
-        for arg in symbolic_args['sqli']:
+    if "sqli" in symbolic_args and len(symbolic_args["sqli"]) > 0:
+        result += "[+] SQLiChecker:\n"
+        for arg in symbolic_args["sqli"]:
             result += f"[*] Testing {arg}\n"
             try:
                 result += subprocess.run([PHP_EXECUTABLE, SQLI_CHECKER, harness_path, *arg], capture_output=True, text=True, check=True).stdout
@@ -383,12 +381,12 @@ def main():
     if not Path(OUTPUT_DIR).exists():
         os.makedirs(OUTPUT_DIR)
 
-    harnesses = list((harness_dir).rglob('*.php'))
+    harnesses = list((harness_dir).rglob("*.php"))
     print(f"[+] {len(harnesses)} harnesses generated in {harness_dir}")
 
     for harness in harnesses:
         harness_path = str(harness)
-        concrete_harness_path = harness_path.replace('/symbolic/', '/concrete/')
+        concrete_harness_path = harness_path.replace("/symbolic/", "/concrete/")
         project_name = f"{plugin_name}_{harness.stem}"
         argv_count = get_argv_count(harness_path)
 
@@ -410,12 +408,12 @@ def main():
             break
 
         result = run_dynamic_checker(concrete_harness_path, symbolic_args)
-        with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.args", 'w') as f:
-            f.write('XSS: ')
-            f.write(', '.join(str(arg) for arg in symbolic_args['xss']))
-            f.write('\nSQLi: ')
-            f.write(', '.join(str(arg) for arg in symbolic_args['sqli']))
-        with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.dynamic", 'w') as f:
+        with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.args", "w") as f:
+            f.write("XSS: ")
+            f.write(", ".join(str(arg) for arg in symbolic_args["xss"]))
+            f.write("\nSQLi: ")
+            f.write(", ".join(str(arg) for arg in symbolic_args["sqli"]))
+        with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.dynamic", "w") as f:
             f.write(result)
         print(result)
 
