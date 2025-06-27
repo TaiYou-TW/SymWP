@@ -82,10 +82,3 @@ export SYMWP_PHP=/home/s2e/php-src/sapi/cli/php # absolute path of compiled PHP
 # Start testing!
 ./pipeline_runner.py custom-404-pro # `-h` to see help
 ```
-
-## How to check function addresses?
-
-```
-objdump ./sapi/cli/php -d | grep "php_output_write>:"
-objdump ./sapi/cli/php -d | grep "sqlite_handle_preparer>:"
-```
