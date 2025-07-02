@@ -150,8 +150,9 @@ function extract_functions_and_methods(string $content): array
         // function or method
         if ($tokens[$i][0] === T_FUNCTION) {
             $name = '';
-            $params = [];
             $body = '';
+            $params = [];
+            $functionCalls = [];
             $braceCount = 0;
             $start = false;
             $isStatic = $tokens[$i - 2][0] === T_STATIC;
@@ -217,6 +218,19 @@ function extract_functions_and_methods(string $content): array
 
             // Extract function body
             for ($i++; $i < $count; $i++) {
+                if (
+                    is_token($tokens[$i], T_STRING) &&
+                    (
+                        $tokens[$i + 1] === '(' ||
+                        (
+                            is_token($tokens[$i + 1], T_WHITESPACE) &&
+                            $tokens[$i + 2] === '('
+                        )
+                    )
+                ) {
+                    $functionCalls[] = $tokens[$i][1];
+                }
+
                 if (is_array($tokens[$i])) {
                     $type = $tokens[$i][0];
 
@@ -267,6 +281,7 @@ function extract_functions_and_methods(string $content): array
                         'class' => $className,
                         'method' => $name,
                         'params' => $params,
+                        'functionCalls' => $functionCalls,
                         'body' => $body,
                         'visibility' => $visibility,
                         'is_static' => $isStatic,
@@ -275,6 +290,7 @@ function extract_functions_and_methods(string $content): array
                     $functions[] = [
                         'name' => $name,
                         'params' => $params,
+                        'functionCalls' => $functionCalls,
                         'body' => $body
                     ];
                 }
@@ -732,6 +748,7 @@ foreach ($phpFiles as $phpFile) {
 
     [$functions, $methods] = extract_functions_and_methods($code);
 
+    // directly generate harness for inline PHP files
     if (is_inline_php_file($code)) {
         $inputs = extract_user_input_vars($code);
         if (!empty($inputs)) {
@@ -740,25 +757,98 @@ foreach ($phpFiles as $phpFile) {
         }
     }
 
-    foreach ($functions as $function) {
+    // extract user input variables from functions and methods
+    foreach ($functions as $index => $function) {
         $inputs = extract_user_input_vars($function['body']);
-        if (!empty($inputs)) {
-            generate_function_harness($phpFile, $function, $inputs, $outputDir);
-            $function_count++;
+        $functions[$index]['inputs'] = $inputs;
+    }
+    foreach ($methods as $index => $method) {
+        $inputs = extract_user_input_vars($method['body']);
+        $methods[$index]['inputs'] = $inputs;
+    }
+
+    // merge inputs from function calls until "Fixed Point" is reached
+    $changed = true;
+    while ($changed) {
+        $changed = false;
+
+        foreach ($functions as $index => $function) {
+            foreach ($function['functionCalls'] as $call) {
+                $callee = null;
+
+                foreach ($functions as $f) {
+                    if ($f['name'] === $call) {
+                        $callee = $f;
+                        break;
+                    }
+                }
+                foreach ($methods as $m) {
+                    if ($m['name'] === $call) {
+                        $callee = $m;
+                        break;
+                    }
+                }
+
+                if ($callee) {
+                    if (count($functions[$index]['inputs']) !== count($callee['inputs'])) {
+                        $changed = true;
+                    }
+                    $functions[$index]['inputs'] = array_merge(
+                        $functions[$index]['inputs'],
+                        $callee['inputs'],
+                    );
+                } else {
+                    echo "Warning: Function call '$call' in function '{$function['name']}' not found.\n";
+                }
+            }
+        }
+
+        foreach ($methods as $index => $method) {
+            foreach ($method['functionCalls'] as $call) {
+                $callee = null;
+
+                foreach ($functions as $f) {
+                    if ($f['name'] === $call) {
+                        $callee = $f;
+                        break;
+                    }
+                }
+                foreach ($methods as $m) {
+                    if ($m['name'] === $call) {
+                        $callee = $m;
+                        break;
+                    }
+                }
+
+                if ($callee) {
+                    if (count($methods[$index]['inputs']) !== count($callee['inputs'])) {
+                        $changed = true;
+                    }
+                    $methods[$index]['inputs'] = array_merge(
+                        $methods[$index]['inputs'],
+                        $callee['inputs'],
+                    );
+                } else {
+                    echo "Warning: Method call '$call' in method '{$method['class']}::{$method['method']}' not found.\n";
+                }
+            }
         }
     }
 
-    foreach ($methods as $method) {
-        $inputs = extract_user_input_vars($method['body']);
-        if (!empty($inputs)) {
-            generate_method_harness(
-                $phpFile,
-                $method,
-                $inputs,
-                $outputDir,
-            );
-            $method_count++;
+    foreach ($functions as $function) {
+        if (empty($function['inputs'])) {
+            continue;
         }
+        generate_function_harness($phpFile, $function, $function['inputs'], $outputDir);
+        $function_count++;
+    }
+
+    foreach ($methods as $method) {
+        if (empty($method['inputs'])) {
+            continue;
+        }
+        generate_method_harness($phpFile, $method, $method['inputs'], $outputDir);
+        $method_count++;
     }
 }
 
