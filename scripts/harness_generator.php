@@ -783,22 +783,22 @@ foreach ($phpFiles as $phpFile) {
                     }
                 }
                 foreach ($methods as $m) {
-                    if ($m['name'] === $call) {
+                    if ($m['method'] === $call) {
                         $callee = $m;
                         break;
                     }
                 }
 
                 if ($callee) {
-                    if (count($functions[$index]['inputs']) !== count($callee['inputs'])) {
-                        $changed = true;
-                    }
+                    $oldCount = count($functions[$index]['inputs']);
                     $functions[$index]['inputs'] = array_merge(
                         $functions[$index]['inputs'],
                         $callee['inputs'],
                     );
-                } else {
-                    echo "Warning: Function call '$call' in function '{$function['name']}' not found.\n";
+
+                    if (count($functions[$index]['inputs']) !== $oldCount) {
+                        $changed = true;
+                    }
                 }
             }
         }
@@ -814,22 +814,22 @@ foreach ($phpFiles as $phpFile) {
                     }
                 }
                 foreach ($methods as $m) {
-                    if ($m['name'] === $call) {
+                    if ($m['method'] === $call) {
                         $callee = $m;
                         break;
                     }
                 }
 
                 if ($callee) {
-                    if (count($methods[$index]['inputs']) !== count($callee['inputs'])) {
-                        $changed = true;
-                    }
+                    $oldCount = count($methods[$index]['inputs']);
                     $methods[$index]['inputs'] = array_merge(
                         $methods[$index]['inputs'],
                         $callee['inputs'],
                     );
-                } else {
-                    echo "Warning: Method call '$call' in method '{$method['class']}::{$method['method']}' not found.\n";
+
+                    if (count($methods[$index]['inputs']) !== $oldCount) {
+                        $changed = true;
+                    }
                 }
             }
         }
