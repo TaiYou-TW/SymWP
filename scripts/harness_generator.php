@@ -32,7 +32,7 @@ function is_token(array|string $token, int $type): bool
     return is_array($token) && $token[0] === $type;
 }
 
-function is_in_token_array(array $token, array $haystack): bool
+function is_in_token_array(array|string $token, array $haystack): bool
 {
     return is_array($token) && in_array($token[0], $haystack);
 }
