@@ -325,8 +325,16 @@ function extract_user_input_vars(string $body): array
             foreach ($matches[1] as $match) {
                 $patternKey = str_replace('\\', '', $pattern);
 
-                // simple check for non user-defined $_SERVER variables
-                if ($patternKey === '$_SERVER' && !str_starts_with($match, "HTTP_")) {
+                // simple check to skip non user-defined $_SERVER variables
+                if (
+                    $patternKey === '$_SERVER' &&
+                    !str_starts_with($match, "HTTP_") &&
+                    $match !== 'QUERY_STRING' &&
+                    $match !== 'REQUEST_METHOD' &&
+                    $match !== 'PHP_SELF' &&
+                    $match !== 'REQUEST_URI' &&
+                    $match !== 'PATH_INFO'
+                ) {
                     continue;
                 }
 
