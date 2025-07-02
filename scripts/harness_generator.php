@@ -27,6 +27,11 @@ enum HarnessType
     case symbolic;
 }
 
+function is_token(array $token, int $type): bool
+{
+    return is_array($token) && $token[0] === $type;
+}
+
 function extract_php_files(string $dir): array
 {
     $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir));
@@ -96,7 +101,7 @@ function extract_functions_and_methods(string $content): array
         }
 
         // namespace
-        if (is_array($tokens[$i]) && $tokens[$i][0] === T_NAMESPACE) {
+        if (is_token($tokens[$i], T_NAMESPACE)) {
             $i += 2;
             if (is_array($tokens[$i]) && in_array($tokens[$i][0], [T_NAME_FULLY_QUALIFIED, T_NAME_QUALIFIED, T_NAME_RELATIVE])) {
                 $namespace = "{$tokens[$i][1]}\\";
@@ -144,7 +149,10 @@ function extract_functions_and_methods(string $content): array
                 if ($start && is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE) {
                     $type = null;
                     // Parameters may not have type hints, so we also check the previous tokens
-                    if (($tokens[$i - 2][0] ?? null) === T_STRING && ($tokens[$i - 1][0] ?? null) === T_WHITESPACE) {
+                    if (
+                        is_token($tokens[$i - 2], T_STRING) &&
+                        is_token($tokens[$i - 1], T_WHITESPACE)
+                    ) {
                         $type = $tokens[$i - 2];
                     }
                     $params[] = [
@@ -173,9 +181,7 @@ function extract_functions_and_methods(string $content): array
                     if ($type === T_START_HEREDOC) {
                         $inHeredoc = true;
                         continue;
-                    }
-
-                    if ($type === T_END_HEREDOC) {
+                    } else if ($type === T_END_HEREDOC) {
                         $inHeredoc = false;
                         continue;
                     }
@@ -325,11 +331,11 @@ function extract_user_input_vars_from_wp_rest_request(string $body): array
     // Step 1: Find "$params = $request->get_query_params();"
     for ($i = 0; $i < $count - 6; $i++) {
         if (
-            is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE &&
+            is_token($tokens[$i], T_VARIABLE) &&
             $tokens[$i + 2] === '=' &&
-            is_array($tokens[$i + 4]) && $tokens[$i + 4][0] === T_VARIABLE && $tokens[$i + 4][1] === '$request' &&
-            is_array($tokens[$i + 5]) && $tokens[$i + 5][0] === T_OBJECT_OPERATOR &&
-            is_array($tokens[$i + 6]) && $tokens[$i + 6][0] === T_STRING &&
+            is_token($tokens[$i + 4], T_VARIABLE) && $tokens[$i + 4][1] === '$request' &&
+            is_token($tokens[$i + 5], T_OBJECT_OPERATOR) &&
+            is_token($tokens[$i + 6], T_STRING) &&
             ($tokens[$i + 6][1] === 'get_query_params' || $tokens[$i + 6][1] === 'get_body_params' || $tokens[$i + 6][1] === 'get_json_params')
         ) {
             if ($tokens[$i + 6][1] === 'get_query_params') {
@@ -352,13 +358,13 @@ function extract_user_input_vars_from_wp_rest_request(string $body): array
     // Step 2: Track accesses to those vars
     for ($i = 0; $i < $count - 3; $i++) {
         if (
-            is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE &&
+            is_token($tokens[$i], T_VARIABLE) &&
             in_array($tokens[$i][1], array_column($paramVars, 'var'))
         ) {
             // $params['page']
             if (
                 $tokens[$i + 1] === '[' &&
-                is_array($tokens[$i + 2]) && $tokens[$i + 2][0] === T_CONSTANT_ENCAPSED_STRING
+                is_token($tokens[$i + 2], T_CONSTANT_ENCAPSED_STRING)
             ) {
                 $paramVar = array_filter($paramVars, fn($var) => $var['var'] === $tokens[$i][1]);
                 if (empty($paramVar)) {
