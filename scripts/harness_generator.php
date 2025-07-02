@@ -175,6 +175,8 @@ function extract_functions_and_methods(string $content): array
                 }
                 if ($start && is_token($tokens[$i], T_VARIABLE)) {
                     $type = null;
+                    $default = null;
+
                     // Parameters may not have type hints, so we also check the previous tokens
                     if (
                         is_token($tokens[$i - 2], T_STRING) &&
@@ -182,10 +184,33 @@ function extract_functions_and_methods(string $content): array
                     ) {
                         $type = $tokens[$i - 2];
                     }
+
+                    // TODO: default values may contain array or object, but we currently only support scalar
+                    $equalIndex = -1;
+                    for ($j = $i + 1; $j < $count; $j++) {
+                        if ($tokens[$j] === '=') {
+                            $equalIndex = $j;
+                        } elseif ($tokens[$j] === ',' || $tokens[$j] === ')') {
+                            break;
+                        } elseif (
+                            $equalIndex !== -1 &&
+                            $j - $equalIndex <= 2 &&
+                            is_in_token_array($tokens[$j], [
+                                T_CONSTANT_ENCAPSED_STRING,
+                                T_LNUMBER,
+                                T_DNUMBER,
+                                T_STRING,
+                            ])
+                        ) {
+                            $default = $tokens[$j];
+                            break;
+                        }
+                    }
+
                     $params[] = [
                         'type' => $type,
                         'name' => substr($tokens[$i][1], 1),
-                        'default' => $tokens[$i + 2] ?? null,
+                        'default' => $default,
                     ];
                 }
             }
