@@ -27,9 +27,14 @@ enum HarnessType
     case symbolic;
 }
 
-function is_token(array $token, int $type): bool
+function is_token(array|string $token, int $type): bool
 {
     return is_array($token) && $token[0] === $type;
+}
+
+function is_in_token_array(array $token, array $haystack): bool
+{
+    return is_array($token) && in_array($token[0], $haystack);
 }
 
 function extract_php_files(string $dir): array
@@ -38,9 +43,15 @@ function extract_php_files(string $dir): array
     $files = [];
 
     foreach ($rii as $file) {
-        if ($file->isDir() || $file->getExtension() !== 'php' || str_starts_with($file->getPathname(), needle: $dir . '/' . OUTPUT_FOLDER) || in_array($file->getFilename(), AVOID_FOLDERS))
+        $pathName = $file->getPathname();
+        if (
+            $file->isDir() ||
+            $file->getExtension() !== 'php' ||
+            str_starts_with($pathName, $dir . '/' . OUTPUT_FOLDER) ||
+            in_array($file->getFilename(), AVOID_FOLDERS)
+        )
             continue;
-        $files[] = $file->getPathname();
+        $files[] = $pathName;
     }
 
     return $files;
@@ -50,8 +61,12 @@ function get_plugin_entry_file(string $dir): string
 {
     $di = new DirectoryIterator($dir);
     foreach ($di as $file) {
-        if ($file->isFile() && is_contain_plugin_name(file_get_contents($file->getPathname()))) {
-            return $file->getPathname();
+        $pathName = $file->getPathname();
+        if (
+            $file->isFile() &&
+            is_contain_plugin_name(file_get_contents($pathName))
+        ) {
+            return $pathName;
         }
     }
     return '';
@@ -103,7 +118,13 @@ function extract_functions_and_methods(string $content): array
         // namespace
         if (is_token($tokens[$i], T_NAMESPACE)) {
             $i += 2;
-            if (is_array($tokens[$i]) && in_array($tokens[$i][0], [T_NAME_FULLY_QUALIFIED, T_NAME_QUALIFIED, T_NAME_RELATIVE])) {
+            if (
+                is_in_token_array($tokens[$i], [
+                    T_NAME_FULLY_QUALIFIED,
+                    T_NAME_QUALIFIED,
+                    T_NAME_RELATIVE,
+                ])
+            ) {
                 $namespace = "{$tokens[$i][1]}\\";
             }
             continue;
@@ -115,7 +136,13 @@ function extract_functions_and_methods(string $content): array
             continue;
         }
 
-        if ($inClass && in_array($tokens[$i][0], [T_PUBLIC, T_PROTECTED, T_PRIVATE])) {
+        if (
+            $inClass && in_array($tokens[$i][0], [
+                T_PUBLIC,
+                T_PROTECTED,
+                T_PRIVATE,
+            ])
+        ) {
             $visibility = $tokens[$i][0];
             continue;
         }
@@ -146,7 +173,7 @@ function extract_functions_and_methods(string $content): array
                     $start = false;
                     break;
                 }
-                if ($start && is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE) {
+                if ($start && is_token($tokens[$i], T_VARIABLE)) {
                     $type = null;
                     // Parameters may not have type hints, so we also check the previous tokens
                     if (
@@ -176,9 +203,7 @@ function extract_functions_and_methods(string $content): array
                         ])
                     ) {
                         $inCurly = true;
-                    }
-
-                    if ($type === T_START_HEREDOC) {
+                    } else if ($type === T_START_HEREDOC) {
                         $inHeredoc = true;
                         continue;
                     } else if ($type === T_END_HEREDOC) {
@@ -336,7 +361,11 @@ function extract_user_input_vars_from_wp_rest_request(string $body): array
             is_token($tokens[$i + 4], T_VARIABLE) && $tokens[$i + 4][1] === '$request' &&
             is_token($tokens[$i + 5], T_OBJECT_OPERATOR) &&
             is_token($tokens[$i + 6], T_STRING) &&
-            ($tokens[$i + 6][1] === 'get_query_params' || $tokens[$i + 6][1] === 'get_body_params' || $tokens[$i + 6][1] === 'get_json_params')
+            (
+                $tokens[$i + 6][1] === 'get_query_params' ||
+                $tokens[$i + 6][1] === 'get_body_params' ||
+                $tokens[$i + 6][1] === 'get_json_params'
+            )
         ) {
             if ($tokens[$i + 6][1] === 'get_query_params') {
                 $super = WP_REST_REQUEST_SET_QUERY_PARAMS;
@@ -441,7 +470,10 @@ function get_wp_request_method(array $inputs): string
 {
     foreach ($inputs as $super => $_) {
         if (in_array($super, WP_REST_REQUEST_SET_PARAMS_METHODS)) {
-            if ($super === WP_REST_REQUEST_SET_BODY_PARAMS || $super === WP_REST_REQUEST_SET_BODY) {
+            if (
+                $super === WP_REST_REQUEST_SET_BODY_PARAMS ||
+                $super === WP_REST_REQUEST_SET_BODY
+            ) {
                 return 'POST';
             }
         }
@@ -466,7 +498,10 @@ function append_user_input_vars_to_harness(string &$harness, array $inputs, stri
                     $harness .= "\$request->$super($key, \$argv[{$argIndex}]);\n";
                     $argIndex++;
                 }
-            } elseif ($super === WP_REST_REQUEST_SET_QUERY_PARAMS || $super === WP_REST_REQUEST_SET_BODY_PARAMS) {
+            } elseif (
+                $super === WP_REST_REQUEST_SET_QUERY_PARAMS ||
+                $super === WP_REST_REQUEST_SET_BODY_PARAMS
+            ) {
                 $harness .= "\$params = [];\n";
                 foreach ($vars as $var) {
                     $key = var_export($var, true);
@@ -585,12 +620,26 @@ function is_inline_php_file(string $code): bool
             }
 
             // global executions
-            if ($depth === 0 && in_array($token[0], [T_ECHO, T_PRINT, T_INLINE_HTML, T_VARIABLE, T_REQUIRE, T_INCLUDE])) {
+            if (
+                $depth === 0 && in_array($token[0], [
+                    T_ECHO,
+                    T_PRINT,
+                    T_INLINE_HTML,
+                    T_VARIABLE,
+                    T_REQUIRE,
+                    T_INCLUDE,
+                ])
+            ) {
                 return true;
             }
 
             // function calls in global scope
-            if ($depth === 0 && $token[0] === T_STRING && isset($tokens[$i + 1]) && $tokens[$i + 1] === '(') {
+            if (
+                $depth === 0 &&
+                $token[0] === T_STRING &&
+                isset($tokens[$i + 1]) &&
+                $tokens[$i + 1] === '('
+            ) {
                 if (!in_array($token[1], SKIP_FUNCTION_CALLS)) {
                     return true;
                 }
