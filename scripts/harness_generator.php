@@ -20,6 +20,7 @@ const SKIP_FUNCTION_CALLS = [
     'function_exists',
 ];
 const PLUGIN_FOLDER_PREFIX = 'wp-content/plugins/';
+const __CONSTRUCT__ = '__construct';
 
 enum HarnessType
 {
@@ -277,6 +278,8 @@ function extract_functions_and_methods(string $content): array
 
             if ($name && $body) {
                 if ($inClass) {
+                    // Also consider __CONSTRUCT__ as a default function call if it's a method
+                    $functionCalls[] = __CONSTRUCT__;
                     $methods[] = [
                         'class' => $className,
                         'method' => $name,
