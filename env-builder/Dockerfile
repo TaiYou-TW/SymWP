@@ -22,7 +22,8 @@ RUN apt-get update && \
                         libboost-all-dev rapidjson-dev libelf-dev libzstd-dev \
                         libgtest-dev libgmock-dev libdwarf-dev libmemcached-dev \
                         libpixman-1-dev libpng-dev nasm gcc-multilib g++-multilib \
-                        libelf-dev:i386 g++-mingw-w64 gcc-mingw-w64 && \
+                        libelf-dev:i386 g++-mingw-w64 gcc-mingw-w64 libxml2-dev \
+                        libsqlite3-dev && \
     useradd -m -s /bin/bash s2e && \
     echo 's2e:s2e' | chpasswd && \
     usermod -aG sudo s2e && \
