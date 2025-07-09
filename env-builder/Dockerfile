@@ -2,7 +2,8 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && \
+RUN sudo dpkg --add-architecture i386 && \
+    apt-get update && \
     apt-get install -y curl && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
@@ -14,10 +15,14 @@ RUN apt-get update && \
 
 RUN apt-get update && \
     apt-get install -y sudo gnupg ca-certificates passwd linux-image-generic \
-                       make build-essential jq wget p7zip-rar \
-                       libsdl1.2debian libcapstone-dev rsync \
-                       cloud-image-utils docker-ce docker-ce-cli \
-                        docker-buildx-plugin docker-compose-plugin && \
+                        make build-essential jq wget p7zip-rar libglib2.0-dev \
+                        libsdl1.2debian libcapstone-dev rsync cmake \
+                        cloud-image-utils docker-ce docker-ce-cli libbsd-dev \
+                        docker-buildx-plugin docker-compose-plugin unzip \
+                        libboost-all-dev rapidjson-dev libelf-dev libzstd-dev \
+                        libgtest-dev libgmock-dev libdwarf-dev libmemcached-dev \
+                        libpixman-1-dev libpng-dev nasm gcc-multilib g++-multilib \
+                        libelf-dev:i386 g++-mingw-w64 gcc-mingw-w64 && \
     useradd -m -s /bin/bash s2e && \
     echo 's2e:s2e' | chpasswd && \
     usermod -aG sudo s2e && \

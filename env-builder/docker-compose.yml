@@ -4,7 +4,7 @@ services:
     build: .
     container_name: s2e-env
     volumes:
-      - ./workspace:~/s2e-env-builder/workspace
+      - ./workspace:/home/sun/s2e-env-builder/workspace
       - /var/run/docker.sock:/var/run/docker.sock
     privileged: true
     devices:
