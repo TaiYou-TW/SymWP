@@ -1,10 +1,29 @@
+diff --git a/Zend/zend_string.h b/Zend/zend_string.h
+index 93b9207a800..202c5fe29a2 100644
+--- a/Zend/zend_string.h
++++ b/Zend/zend_string.h
+@@ -204,12 +204,13 @@ static zend_always_inline zend_string *zend_string_init(const char *str, size_t
+ 
+ static zend_always_inline zend_string *zend_string_init_fast(const char *str, size_t len)
+ {
+-	if (len > 1) {
++	if (len >= 1) {
+ 		return zend_string_init(str, len, 0);
+ 	} else if (len == 0) {
+ 		return zend_empty_string;
+-	} else /* if (len == 1) */ {
+-		return ZSTR_CHAR((zend_uchar) *str);
++	} else {
++		// This should never be reached, we don't want interned string anymore
++		return 0;
+ 	}
+ }
+ 
 diff --git a/ext/filter/filter.c b/ext/filter/filter.c
-old mode 100644
-new mode 100755
-index 50eefb440d6..6fdf88008ee
+index c9d0f256b59..b22741ede36 100644
 --- a/ext/filter/filter.c
 +++ b/ext/filter/filter.c
-@@ -565,70 +565,6 @@ static void php_filter_array_handler(zval *input, HashTable *op_ht, zend_long op
+@@ -574,70 +574,6 @@ static void php_filter_array_handler(zval *input, HashTable *op_ht, zend_long op
  }
  /* }}} */
  
@@ -37,10 +56,10 @@ index 50eefb440d6..6fdf88008ee
 -
 -	if (!input || (tmp = zend_hash_find(Z_ARRVAL_P(input), var)) == NULL) {
 -		zend_long filter_flags = 0;
+-		zval *option, *opt, *def;
 -		if (!filter_args_ht) {
 -			filter_flags = filter_args_long;
 -		} else {
--			zval *option, *opt, *def;
 -			if ((option = zend_hash_str_find(filter_args_ht, "flags", sizeof("flags") - 1)) != NULL) {
 -				filter_flags = zval_get_long(option);
 -			}
@@ -68,7 +87,7 @@ index 50eefb440d6..6fdf88008ee
 -
 -	ZVAL_DUP(return_value, tmp);
 -
--	php_filter_call(return_value, filter, filter_args_ht, filter_args_long, FILTER_REQUIRE_SCALAR);
+-	php_filter_call(return_value, filter, filter_args_ht, filter_args_long, 1, FILTER_REQUIRE_SCALAR);
 -}
 -/* }}} */
 -
