@@ -8,6 +8,8 @@
 +
 +    s2e/Plugins/EchoFunctionTracker.cpp
 +
++    s2e/Plugins/InternedStringTracker.cpp
++
      # Core plugins
      s2e/Plugins/Core/BaseInstructions.cpp
      s2e/Plugins/Core/HostFiles.cpp
