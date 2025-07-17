@@ -28,17 +28,23 @@ XSS_PAYLOAD_MARKER = "XSS_PAYLOAD_MARKER"
 
 FATAL_ERROR_THRESHOLD = 10000
 
+CHECK_INTERVAL_SECONDS = 10
+
 ENV_SYMWP_PHP = "SYMWP_PHP"
 
 ECHO_FUNCTION_TRACKER_ADDRESS = ""
 SQLITE_FUNCTION_TRACKER_ADDRESS = ""
+
+STOP_IF_FOUND = False
+ITERATIONS = 1
+USE_WP_LOADER = False
 
 def parse_args() -> None:
     """
     Parse command line arguments for the script.
     Sets global variables for timeout, argv length, and core count.
     """
-    global TIMEOUT_MINUTES, ARGV_LENGTH, CORE, INCLUDE
+    global TIMEOUT_MINUTES, ARGV_LENGTH, CORE, INCLUDE, STOP_IF_FOUND, ITERATIONS, USE_WP_LOADER
 
     parser = argparse.ArgumentParser(description="Run symbolic & dynamic analysis on a WordPress plugin.")
     parser.add_argument("plugin_folder", help="Path to the WordPress plugin folder.")
@@ -46,12 +52,18 @@ def parse_args() -> None:
     parser.add_argument("--argv-length", "-l", type=int, default=20, help="Length of symbolic argv (default: 20).")
     parser.add_argument("--core", "-c", type=int, default=16, help="Number of cores to use for S2E (default: 16).")
     parser.add_argument("--include", "-i", type=str, default="", help="Include only specific targets, it can be filename, full path of file or method name.")
+    parser.add_argument("--stop-if-found", action="store_true", help="Stop S2E analysis early if vulnerabilities are found.")
+    parser.add_argument("--iterations", type=int, default=1, help="Number of times to run the whole analysis (default: 1).")
+    parser.add_argument("--use-wp-loader", action="store_true", help="Use original wp-loader.php instead of custom loaders.")
 
     args = parser.parse_args()
     TIMEOUT_MINUTES = args.timeout
     ARGV_LENGTH = args.argv_length
     CORE = args.core
     INCLUDE = args.include.replace("/", "-").replace(".", "-")
+    STOP_IF_FOUND = args.stop_if_found
+    ITERATIONS = args.iterations
+    USE_WP_LOADER = args.use_wp_loader
 
 def is_all_dependencies_present() -> bool:
     """
@@ -107,7 +119,10 @@ def generate_harnesses(plugin_folder: str) -> None:
         plugin_folder (str): Path to the WordPress plugin folder.
     """
     print(f"[+] Generating harnesses for: {plugin_folder}")
-    subprocess.run([PHP_EXECUTABLE, HARNESS_GEN_SCRIPT, plugin_folder], check=True)
+    cmd = [PHP_EXECUTABLE, HARNESS_GEN_SCRIPT, plugin_folder]
+    if USE_WP_LOADER:
+        cmd.append("--use-wp-loader")
+    subprocess.run(cmd, check=True)
 
 def get_argv_count(harness_path: str) -> int:
     """
@@ -214,23 +229,31 @@ def setup_s2e_project(plugin_name: str, harness_path: str, argv_count: int, proj
     shutil.copy(harness_path, harness_dest)
     shutil.move(f"{proj_path}/{Path(harness_path).name}.symranges", f"{proj_path}/harness.symranges")
 
-    shutil.copy("base-wordpress-loader.php", proj_path)
-    shutil.copy("symbolic-wordpress-loader.php", proj_path)
+    if not USE_WP_LOADER:
+        shutil.copy("base-wordpress-loader.php", proj_path)
+        shutil.copy("symbolic-wordpress-loader.php", proj_path)
+        shutil.copy("concrete-wordpress-loader.php", proj_path)
 
 
-def run_s2e(project_name: str, project_path: str) -> None:
+def run_s2e(project_name: str, project_path: str, harness_path: str = None) -> tuple[bool, float]:
     """
     Run the S2E analysis on the specified project.
     Args:
         project_name (str): Name of the S2E project.
         project_path (Path): Path to the S2E project directory.
+        harness_path (str): Path to the harness file (needed for early stopping).
+    Returns:
+        tuple[bool, float]: (True if stopped early due to vulnerability, time-to-bug in seconds)
     """
     print(f"[+] Running S2E on {project_name}...")
 
+    start_time = time.time()
     now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     end = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() + TIMEOUT_MINUTES * 60))
     print(f"[+] Start at: {now}, Estimated end at: {end}")
 
+    early_stop = False
+    time_to_bug = 0.0
     try:
         with open(str(project_path) + "/stdout.txt", "w") as f:
             proc = subprocess.Popen(
@@ -239,13 +262,44 @@ def run_s2e(project_name: str, project_path: str) -> None:
                 stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid  # Ensure we can kill the process group
             )
-            # S2E's timeout option will not work sometime, make sure it will finish in time
-            proc.wait(timeout=TIMEOUT_MINUTES * 60)
+            
+            # If stop-if-found is enabled, monitor logs periodically
+            if STOP_IF_FOUND and harness_path:
+                timeout_end = time.time() + TIMEOUT_MINUTES * 60
+                
+                while time.time() < timeout_end:
+                    # Check if process is still running
+                    if proc.poll() is not None:
+                        break
+                    
+                    # Wait for check interval or process completion
+                    try:
+                        proc.wait(timeout=CHECK_INTERVAL_SECONDS)
+                        break  # Process completed normally
+                    except TimeoutExpired:
+                         # Process still running, check for vulnerabilities
+                         if check_for_vulnerabilities_during_execution(str(project_path), harness_path):
+                             time_to_bug = time.time() - start_time
+                             print(f"[!] Stopping S2E analysis due to vulnerability found.")
+                             print(f"[!] Time-to-bug: {time_to_bug:.2f} seconds ({time_to_bug/60:.2f} minutes)")
+                             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                             early_stop = True
+                             break
+                
+                # Final timeout check
+                if time.time() >= timeout_end and proc.poll() is None:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            else:
+                # S2E's timeout is not accurate, so we need to make sure it's not running too long
+                proc.wait(timeout=TIMEOUT_MINUTES * 60)
+                
     except TimeoutExpired:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
     except KeyboardInterrupt:
         print("[-] User interrupted the process.")
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    
+    return early_stop, time_to_bug
 
 def remove_incomplete_args(args: set) -> set:
     """
@@ -272,8 +326,6 @@ def extract_symbolic_args(project_path: str) -> dict | None:
     Returns:
         dict: Dictionary containing sets of symbolic arguments for XSS and SQLi.
     """
-    print("[+] Analyzing S2E output...")
-    
     xss_args = set()
     sqli_args = set()
     in_error = False
@@ -355,6 +407,57 @@ def run_dynamic_checker(harness_path: str, symbolic_args: dict) -> str:
 
     return result
 
+def has_vulnerability(dynamic_result: str) -> bool:
+    """
+    Check if the dynamic analysis result contains actual vulnerabilities.
+    Args:
+        dynamic_result (str): Output from the dynamic checker.
+    Returns:
+        bool: True if vulnerabilities are found, False otherwise.
+    """
+    if "[!] Potential quotes breaks in tags detected" in dynamic_result or \
+        "[!] Potential space breaks in tag without quotes detected" in dynamic_result or \
+        "[!] Potential tags injection detected" in dynamic_result:
+        return True
+
+    if "[!] Potential SQL injection detected" in dynamic_result:
+        return True
+    
+    return False
+
+def check_for_vulnerabilities_during_execution(project_path: str, harness_path: str) -> bool:
+    """
+    Check for vulnerabilities during S2E execution by monitoring logs.
+    Args:
+        project_path (str): Path to the S2E project directory.
+        harness_path (str): Path to the harness file.
+    Returns:
+        bool: True if vulnerabilities are found, False otherwise.
+    """
+    symbolic_args = extract_symbolic_args(project_path)
+    if symbolic_args is None:
+        return False
+    
+    # Check if we have any test cases
+    if (len(symbolic_args.get("xss", [])) == 0 and 
+        len(symbolic_args.get("sqli", [])) == 0):
+        return False
+    
+    # Run dynamic checker on concrete harness
+    concrete_harness_path = harness_path.replace("/symbolic/", "/concrete/")
+    if not Path(concrete_harness_path).exists():
+        return False
+    
+    dynamic_result = run_dynamic_checker(concrete_harness_path, symbolic_args)
+    
+    # Check if actual vulnerabilities were found
+    if has_vulnerability(dynamic_result):
+        print(f"[!] Vulnerability found! Stopping S2E analysis early.")
+        print(dynamic_result)
+        return True
+    
+    return False
+
 def main():
     global INCLUDE
 
@@ -384,38 +487,72 @@ def main():
     harnesses = list((harness_dir).rglob("*.php"))
     print(f"[+] {len(harnesses)} harnesses generated in {harness_dir}")
 
-    for harness in harnesses:
-        harness_path = str(harness)
-        concrete_harness_path = harness_path.replace("/symbolic/", "/concrete/")
-        project_name = f"{plugin_name}_{harness.stem}"
-        argv_count = get_argv_count(harness_path)
+    # Run analysis for specified number of iterations
+    for iteration in range(1, ITERATIONS + 1):
+        print(f"\n[+] ======= ITERATION {iteration}/{ITERATIONS} =======")
+        
+        # Create output directory for this iteration
+        current_output_dir = OUTPUT_DIR
+        if ITERATIONS > 1:
+            current_output_dir = f"{OUTPUT_DIR}/iteration_{iteration}"
+            if not Path(current_output_dir).exists():
+                os.makedirs(current_output_dir)
+        
+        iteration_stopped_early = False
+        
+        for harness in harnesses:
+            harness_path = str(harness)
+            concrete_harness_path = harness_path.replace("/symbolic/", "/concrete/")
+            project_name = f"{plugin_name}_{harness.stem}"
+            if ITERATIONS > 1:
+                project_name = f"{plugin_name}_{harness.stem}_iter{iteration}"
+            argv_count = get_argv_count(harness_path)
 
-        if INCLUDE and INCLUDE not in harness_path:
-            print(f"[-] Skipping {harness_path} as it does not match the include \"{INCLUDE}\".")
-            continue
+            if INCLUDE and INCLUDE not in harness_path:
+                print(f"[-] Skipping {harness_path} as it does not match the include \"{INCLUDE}\".")
+                continue
+        
+            if argv_count == 0:
+                print(f"[-] No symbolic arguments found in {harness_path}. Skipping.")
+                continue
+            print(f"[+] Harness: {harness_path}, Symbolic argv count: {argv_count}")
+
+            setup_s2e_project(plugin_name, harness_path, argv_count, project_name)
+            project_path = Path(S2E_PROJECTS_DIR) / project_name
+            early_stopped, time_to_bug = run_s2e(project_name, project_path, harness_path)
+
+            # Save time-to-bug information if early stopping occurred
+            if early_stopped and STOP_IF_FOUND:
+                print("[!] Early stopping enabled and vulnerability found. Stopping analysis of remaining harnesses.")
+                with open(f"{current_output_dir}/{Path(harness_path).name}.time_to_bug", "w") as f:
+                    f.write(f"Time-to-bug: {time_to_bug:.2f} seconds ({time_to_bug/60:.2f} minutes)\n")
+                    f.write(f"Harness: {harness_path}\n")
+                    f.write(f"Project: {project_name}\n")
+                    f.write(f"Iteration: {iteration}\n")
+                iteration_stopped_early = True
+                break
+
+            symbolic_args = extract_symbolic_args(project_path)
+            if symbolic_args is None:
+                break
+
+            result = run_dynamic_checker(concrete_harness_path, symbolic_args)
+            with open(f"{current_output_dir}/{Path(harness_path).name}.args", "w") as f:
+                f.write("XSS: ")
+                f.write(", ".join(str(arg) for arg in symbolic_args["xss"]))
+                f.write("\nSQLi: ")
+                f.write(", ".join(str(arg) for arg in symbolic_args["sqli"]))
+            with open(f"{current_output_dir}/{Path(harness_path).name}.dynamic", "w") as f:
+                f.write(result)
+            
+            print(result)
+        
+        if iteration_stopped_early:
+            print(f"[!] Iteration {iteration} stopped early due to vulnerability found.")
+        else:
+            print(f"[+] Iteration {iteration} completed normally.")
     
-        if argv_count == 0:
-            print(f"[-] No symbolic arguments found in {harness_path}. Skipping.")
-            continue
-        print(f"[+] Harness: {harness_path}, Symbolic argv count: {argv_count}")
-
-        setup_s2e_project(plugin_name, harness_path, argv_count, project_name)
-        project_path = Path(S2E_PROJECTS_DIR) / project_name
-        run_s2e(project_name, project_path)
-
-        symbolic_args = extract_symbolic_args(project_path)
-        if symbolic_args is None:
-            break
-
-        result = run_dynamic_checker(concrete_harness_path, symbolic_args)
-        with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.args", "w") as f:
-            f.write("XSS: ")
-            f.write(", ".join(str(arg) for arg in symbolic_args["xss"]))
-            f.write("\nSQLi: ")
-            f.write(", ".join(str(arg) for arg in symbolic_args["sqli"]))
-        with open(f"{OUTPUT_DIR}/{Path(harness_path).name}.dynamic", "w") as f:
-            f.write(result)
-        print(result)
+    print(f"\n[+] All {ITERATIONS} iteration(s) completed.")
 
 if __name__ == "__main__":
     main()

@@ -470,14 +470,18 @@ function extract_user_input_vars_from_wp_rest_request(string $body): array
 
 function common_harness_header(HarnessType $type): string
 {
-    global $plugin_entry_file;
+    global $plugin_entry_file, $use_wp_loader;
 
-    if ($type === HarnessType::symbolic) {
-        $wordpress_loader = 'symbolic-wordpress-loader.php';
-    } elseif ($type === HarnessType::concrete) {
-        $wordpress_loader = 'concrete-wordpress-loader.php';
+    if ($use_wp_loader) {
+        $wordpress_loader = './WordPress/wp-load.php';
     } else {
-        throw new InvalidArgumentException("Invalid harness type: " . $type->name);
+        if ($type === HarnessType::symbolic) {
+            $wordpress_loader = 'symbolic-wordpress-loader.php';
+        } elseif ($type === HarnessType::concrete) {
+            $wordpress_loader = 'concrete-wordpress-loader.php';
+        } else {
+            throw new InvalidArgumentException("Invalid harness type: " . $type->name);
+        }
     }
 
     $timestamp = date("Y-m-d H:i:s");
@@ -726,11 +730,17 @@ function generate_inline_harness(string $filepath, array $inputs, string $output
 }
 
 if ($argc < 2) {
-    echo "Usage: php {$argv[0]} <target_directory>\n";
+    echo "Usage: php {$argv[0]} <target_directory> [--use-wp-loader]\n";
     exit(1);
 }
 $targetDir = rtrim($argv[1], '/\\');
 $outputDir = "$targetDir/" . OUTPUT_FOLDER;
+
+// Parse arguments
+$use_wp_loader = false;
+if ($argc > 2 && $argv[2] === '--use-wp-loader') {
+    $use_wp_loader = true;
+}
 
 foreach (HarnessType::cases() as $type) {
     $dir = $outputDir . DIRECTORY_SEPARATOR . $type->name;
